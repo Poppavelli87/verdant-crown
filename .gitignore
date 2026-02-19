@@ -4,6 +4,6 @@ output/
 dist/
 playwright-report/
 coverage/
-tmp/
-.DS_Store
 *.log
+.DS_Store
+tmp/
