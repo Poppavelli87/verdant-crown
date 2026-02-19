@@ -1,0 +1,327 @@
+{
+  "options": {
+    "runs": 25,
+    "seedBase": 1234,
+    "scenario": "all",
+    "headed": false,
+    "url": "http://127.0.0.1:4173"
+  },
+  "outputDir": "C:\\Users\\mxz\\verdant-crown\\output\\qa\\20260219-161724-330",
+  "generatedAt": "2026-02-19T21:20:21.910Z",
+  "summary": {
+    "totalRuns": 25,
+    "passedRuns": 25,
+    "failedRuns": 0,
+    "totalErrors": 0,
+    "totalWarnings": 4,
+    "scenarios": {
+      "act3_rewrite": {
+        "runs": 5,
+        "passed": 5,
+        "failed": 0,
+        "errors": 0
+      },
+      "smoke": {
+        "runs": 5,
+        "passed": 5,
+        "failed": 0,
+        "errors": 0
+      },
+      "act1": {
+        "runs": 5,
+        "passed": 5,
+        "failed": 0,
+        "errors": 0
+      },
+      "act2": {
+        "runs": 5,
+        "passed": 5,
+        "failed": 0,
+        "errors": 0
+      },
+      "act3_seal": {
+        "runs": 5,
+        "passed": 5,
+        "failed": 0,
+        "errors": 0
+      }
+    },
+    "dialogueCoverage": {
+      "elaine_join": {
+        "hits": 10,
+        "withDialogue": 10
+      },
+      "act2_entry": {
+        "hits": 5,
+        "withDialogue": 5
+      },
+      "loom_proctor_defeat": {
+        "hits": 5,
+        "withDialogue": 5
+      },
+      "act3_last_door": {
+        "hits": 10,
+        "withDialogue": 10
+      },
+      "final_boss_start": {
+        "hits": 10,
+        "withDialogue": 10
+      },
+      "ending_selected": {
+        "hits": 10,
+        "withDialogue": 10
+      }
+    }
+  },
+  "routeMap": [
+    "start -> prologue -> Arthur opening -> Thornmere",
+    "Thornmere -> Hollow Scar -> first Vein quest -> Rowan heal/report",
+    "Endgame Act II -> Inner Spire locks -> Loom Proctor -> Last Door",
+    "Endgame Act III -> Last Spire rift/core setpieces -> Narrator Crown -> ending choice"
+  ],
+  "debugHooks": [
+    "debug_warp_to_scene",
+    "debug_set_story_flag",
+    "debug_set_objective",
+    "debug_get_current_objective",
+    "debug_get_story_flags",
+    "debug_complete_resonance_lock",
+    "debug_start_loom_proctor",
+    "debug_start_rift_setpiece",
+    "debug_disable_final_clamp",
+    "debug_start_final_boss",
+    "debug_trigger_choice_ui",
+    "debug_force_basic_attack",
+    "debug_force_elaine_cast",
+    "debug_get_party_ai_state",
+    "debug_get_render_state",
+    "debug_validate_story"
+  ],
+  "runs": [
+    {
+      "runId": "run-0001",
+      "scenarioId": "act3_rewrite",
+      "pass": true,
+      "errors": 0,
+      "objective": "credits",
+      "sceneId": "last_spire",
+      "integrityIssues": []
+    },
+    {
+      "runId": "run-0002",
+      "scenarioId": "smoke",
+      "pass": true,
+      "errors": 0,
+      "objective": "return_to_rowan",
+      "sceneId": "thornmere",
+      "integrityIssues": []
+    },
+    {
+      "runId": "run-0003",
+      "scenarioId": "act1",
+      "pass": true,
+      "errors": 0,
+      "objective": "return_to_rowan",
+      "sceneId": "thornmere",
+      "integrityIssues": []
+    },
+    {
+      "runId": "run-0004",
+      "scenarioId": "act2",
+      "pass": true,
+      "errors": 0,
+      "objective": "approach_last_door",
+      "sceneId": "inner_spire",
+      "integrityIssues": []
+    },
+    {
+      "runId": "run-0005",
+      "scenarioId": "act3_seal",
+      "pass": true,
+      "errors": 0,
+      "objective": "credits",
+      "sceneId": "last_spire",
+      "integrityIssues": []
+    },
+    {
+      "runId": "run-0006",
+      "scenarioId": "act3_rewrite",
+      "pass": true,
+      "errors": 0,
+      "objective": "credits",
+      "sceneId": "last_spire",
+      "integrityIssues": []
+    },
+    {
+      "runId": "run-0007",
+      "scenarioId": "smoke",
+      "pass": true,
+      "errors": 0,
+      "objective": "return_to_rowan",
+      "sceneId": "thornmere",
+      "integrityIssues": []
+    },
+    {
+      "runId": "run-0008",
+      "scenarioId": "act1",
+      "pass": true,
+      "errors": 0,
+      "objective": "return_to_rowan",
+      "sceneId": "thornmere",
+      "integrityIssues": []
+    },
+    {
+      "runId": "run-0009",
+      "scenarioId": "act2",
+      "pass": true,
+      "errors": 0,
+      "objective": "approach_last_door",
+      "sceneId": "inner_spire",
+      "integrityIssues": []
+    },
+    {
+      "runId": "run-0010",
+      "scenarioId": "act3_seal",
+      "pass": true,
+      "errors": 0,
+      "objective": "credits",
+      "sceneId": "last_spire",
+      "integrityIssues": []
+    },
+    {
+      "runId": "run-0011",
+      "scenarioId": "act3_rewrite",
+      "pass": true,
+      "errors": 0,
+      "objective": "credits",
+      "sceneId": "last_spire",
+      "integrityIssues": []
+    },
+    {
+      "runId": "run-0012",
+      "scenarioId": "smoke",
+      "pass": true,
+      "errors": 0,
+      "objective": "return_to_rowan",
+      "sceneId": "thornmere",
+      "integrityIssues": []
+    },
+    {
+      "runId": "run-0013",
+      "scenarioId": "act1",
+      "pass": true,
+      "errors": 0,
+      "objective": "return_to_rowan",
+      "sceneId": "thornmere",
+      "integrityIssues": []
+    },
+    {
+      "runId": "run-0014",
+      "scenarioId": "act2",
+      "pass": true,
+      "errors": 0,
+      "objective": "approach_last_door",
+      "sceneId": "inner_spire",
+      "integrityIssues": []
+    },
+    {
+      "runId": "run-0015",
+      "scenarioId": "act3_seal",
+      "pass": true,
+      "errors": 0,
+      "objective": "credits",
+      "sceneId": "last_spire",
+      "integrityIssues": []
+    },
+    {
+      "runId": "run-0016",
+      "scenarioId": "act3_rewrite",
+      "pass": true,
+      "errors": 0,
+      "objective": "credits",
+      "sceneId": "last_spire",
+      "integrityIssues": []
+    },
+    {
+      "runId": "run-0017",
+      "scenarioId": "smoke",
+      "pass": true,
+      "errors": 0,
+      "objective": "return_to_rowan",
+      "sceneId": "thornmere",
+      "integrityIssues": []
+    },
+    {
+      "runId": "run-0018",
+      "scenarioId": "act1",
+      "pass": true,
+      "errors": 0,
+      "objective": "return_to_rowan",
+      "sceneId": "thornmere",
+      "integrityIssues": []
+    },
+    {
+      "runId": "run-0019",
+      "scenarioId": "act2",
+      "pass": true,
+      "errors": 0,
+      "objective": "approach_last_door",
+      "sceneId": "inner_spire",
+      "integrityIssues": []
+    },
+    {
+      "runId": "run-0020",
+      "scenarioId": "act3_seal",
+      "pass": true,
+      "errors": 0,
+      "objective": "credits",
+      "sceneId": "last_spire",
+      "integrityIssues": []
+    },
+    {
+      "runId": "run-0021",
+      "scenarioId": "act3_rewrite",
+      "pass": true,
+      "errors": 0,
+      "objective": "credits",
+      "sceneId": "last_spire",
+      "integrityIssues": []
+    },
+    {
+      "runId": "run-0022",
+      "scenarioId": "smoke",
+      "pass": true,
+      "errors": 0,
+      "objective": "return_to_rowan",
+      "sceneId": "thornmere",
+      "integrityIssues": []
+    },
+    {
+      "runId": "run-0023",
+      "scenarioId": "act1",
+      "pass": true,
+      "errors": 0,
+      "objective": "return_to_rowan",
+      "sceneId": "thornmere",
+      "integrityIssues": []
+    },
+    {
+      "runId": "run-0024",
+      "scenarioId": "act2",
+      "pass": true,
+      "errors": 0,
+      "objective": "approach_last_door",
+      "sceneId": "inner_spire",
+      "integrityIssues": []
+    },
+    {
+      "runId": "run-0025",
+      "scenarioId": "act3_seal",
+      "pass": true,
+      "errors": 0,
+      "objective": "credits",
+      "sceneId": "last_spire",
+      "integrityIssues": []
+    }
+  ]
+}

@@ -1,0 +1,171 @@
+# Project Scan Report
+
+- Generated: 2026-02-19T21:20:30.044Z
+- TODO/FIXME matches: 3
+- console.error/warn in src: 0
+- Hot-loop allocation heuristics: 227
+- Debug hooks defined: 133
+- Potentially unused debug hooks: 31
+
+## TODO/FIXME
+- `scripts/qa/scan_project.js:116` lines.push(`- TODO/FIXME matches: ${todoMatches.length}`);
+- `scripts/qa/scan_project.js:123` lines.push("## TODO/FIXME");
+- `scripts/qa/scan_project.js:181` const todo = findPatternLines(entry.content, /\b(?:TODO|FIXME)\b/);
+
+## console.error / console.warn in src
+- none
+
+## Hot-loop allocation heuristics
+- `src/boss/bossInstance.js:1160` update(dtSeconds, { elapsedSeconds = 0, playerPosition = null, onPlayerDamaged = null } = {}) {
+- `src/boss/bossInstance.js:1174` playerPosition: playerPosition ?? { x: 0, z: 0 },
+- `src/boss/bossInstance.js:1174` playerPosition: playerPosition ?? { x: 0, z: 0 },
+- `src/combat/statusEffects.js:196` addEffect(entityId, effectInput = {}) {
+- `src/combat/statusEffects.js:212` const list = this._getEffectList(id, { create: true });
+- `src/combat/veinGuardian.js:829` update(dtSeconds, { elapsedSeconds, playerPosition, onPlayerDamaged, onSpawnMinions } = {}) {
+- `src/director/pacingDirector.js:162` update(dtSeconds, { inCombat, playerHealthRatio }) {
+- `src/main.js:1654` function update(dtSeconds, { active, elapsedSeconds, sceneId, center }) {
+- `src/main.js:1935` sceneId.textContent = `scene=${currentSceneId}`;
+- `src/main.js:1936` sceneObjects.textContent = `objects=${sceneObjectCount}`;
+- `src/main.js:1937` hasGround.textContent = `hasGround=${hasGroundMesh}`;
+- `src/main.js:1938` portalCount.textContent = `portals=${hasPortalCount}`;
+- `src/main.js:1939` npcCount.textContent = `npcs=${hasNpcCount}`;
+- `src/main.js:1940` enemyCount.textContent = `enemies=${hasEnemyCount}`;
+- `src/main.js:1941` attacksEnabled.textContent = `attacksEnabled=${enemyAttacksEnabled}`;
+- `src/main.js:1942` terrainStatus.textContent = `terrain=${terrainStatusText}`;
+- `src/main.js:1951` const byId = new Map(members.map((member) => [member.id, member]));
+- `src/main.js:1953` aiHeader.textContent = `partyAI combat=${Boolean(partyAiState?.combatActive)} boss=${Boolean(partyAiState?.bossActive)}`;
+- `src/main.js:2427` play(entries = [], { onDone = null } = {}) {
+- `src/main.js:2427` play(entries = [], { onDone = null } = {}) {
+- `src/main.js:2578` play(entries = [], { onDone = null } = {}) {
+- `src/main.js:2578` play(entries = [], { onDone = null } = {}) {
+- `src/main.js:2596` pulseGlyph.style.opacity = `${0.42 + (0.5 + Math.sin(pulseTime * 3.2) * 0.5) * 0.34}`;
+- `src/main.js:2578` play(entries = [], { onDone = null } = {}) {
+- `src/main.js:2596` pulseGlyph.style.opacity = `${0.42 + (0.5 + Math.sin(pulseTime * 3.2) * 0.5) * 0.34}`;
+- `src/main.js:2596` pulseGlyph.style.opacity = `${0.42 + (0.5 + Math.sin(pulseTime * 3.2) * 0.5) * 0.34}`;
+- `src/main.js:2615` function createEndingChoicePanel({ onConfirm }) {
+- `src/main.js:2596` pulseGlyph.style.opacity = `${0.42 + (0.5 + Math.sin(pulseTime * 3.2) * 0.5) * 0.34}`;
+- `src/main.js:2615` function createEndingChoicePanel({ onConfirm }) {
+- `src/main.js:2615` function createEndingChoicePanel({ onConfirm }) {
+- `src/main.js:2729` function setSelection(next, { fromTouch = false } = {}) {
+- `src/main.js:3006` update({ visible, mp = 0, cooldowns = {}, interactive = true }) {
+- `src/main.js:3027` entry.cooldownOverlay.style.background = `conic-gradient(rgba(8, 16, 26, 0.7) ${degrees}deg, rgba(8, 16, 26, 0.08) ${degrees}deg 360deg)`;
+- `src/main.js:3029` entry.cooldownText.textContent = `${Math.max(0, cooldown).toFixed(1)}s`;
+- `src/main.js:3042` function createWillowSpellBar({ onSpellKey }) {
+- `src/main.js:3132` update({ visible, stance = "ruby", mp = 0, cooldowns = {}, interactive = true }) {
+- `src/main.js:3153` entry.button.title = `${spell.name} (${spell.mpCost} MP)`;
+- `src/main.js:3158` entry.cooldownOverlay.style.background = `conic-gradient(rgba(8, 16, 26, 0.72) ${degrees}deg, rgba(8, 16, 26, 0.08) ${degrees}deg 360deg)`;
+- `src/main.js:3160` entry.cooldownText.textContent = `${cooldown.toFixed(1)}s`;
+- `src/main.js:3210` update({ visible, enabled = true } = {}) {
+- `src/main.js:3223` function createTacticsToggleButton({ onToggle }) {
+- `src/main.js:3261` update({ visible, modeLabel = "Balanced" }) {
+- `src/main.js:3264` button.textContent = `Mode\n${modeLabel}`;
+- `src/main.js:3273` function createPartyPortraitBar({ onSelect, onLongSelect }) {
+- `src/main.js:3289` button.dataset.testid = `portrait-${id}`;
+- `src/main.js:3348` update({ visible, activeCharacterId = "arthur", elaineAvailable = false, willowAvailable = false }) {
+- `src/main.js:3377` ripple.style.left = `${clientX}px`;
+- `src/main.js:3378` ripple.style.top = `${clientY}px`;
+- `src/main.js:6811` function startChapter6RelaySetpiece({ force = false } = {}) {
+- `src/main.js:7219` function tryStartChapter2Flow({ force = false } = {}) {
+- `src/main.js:8008` function triggerChapter9SunderWave({ center = null } = {}) {
+- `src/main.js:8373` const payload = chapter9LoreVisionPending.payload ?? {};
+- `src/main.js:8375` if (payload.preface) entries.push({ title: "THE SUNDERING", text: payload.preface });
+- `src/main.js:8376` if (payload.harvesterThread) entries.push({ title: "ECHO THREAD", text: payload.harvesterThread });
+- `src/main.js:8383` if (payload.finalLine) entries.push({ title: "LAST SPIRE", text: String(payload.finalLine) });
+- `src/main.js:8655` function startThirdSealQuestSetpiece({ force = false } = {}) {
+- `src/main.js:8850` startThirdSealQuestSetpiece({ force: false });
+- `src/main.js:9146` startSpireBreachSetpiece({ force: false });
+- `src/main.js:9781` const payload = endgameAct2LorePending.payload ?? {};
+- `src/main.js:9783` if (payload.preface) entries.push({ title: "MEMORY LOOM", text: payload.preface });
+- `src/main.js:9784` if (payload.tierThread) entries.push({ title: "CROWN ECHO", text: payload.tierThread });
+- `src/main.js:9791` if (payload.finalLine) entries.push({ title: "LAST DOOR", text: String(payload.finalLine) });
+- `src/main.js:9895` function tryShatterNearestLoomPrismPillar({ showToast = true } = {}) {
+- `src/main.js:10042` memoryPressureTracker.setActive(false, { resetValue: true });
+- `src/main.js:10054` memoryPressureTracker.setActive(shouldRun, { resetValue: !shouldRun });
+- `src/main.js:10055` const pressure = memoryPressureTracker.update(dt, { enabled: shouldRun });
+- `src/main.js:10055` const pressure = memoryPressureTracker.update(dt, { enabled: shouldRun });
+- `src/main.js:10078` { x: player.position.x, z: player.position.z },
+- `src/main.js:10088` onChannelTick: ({ index, remaining }) => {
+- `src/main.js:10091` setTransientMessage(`Aligning Lock ${lockIndex} ${Math.ceil(remaining * 10) / 10}s`, 0.24);
+- `src/main.js:10078` { x: player.position.x, z: player.position.z },
+- `src/main.js:10088` onChannelTick: ({ index, remaining }) => {
+- `src/main.js:10091` setTransientMessage(`Aligning Lock ${lockIndex} ${Math.ceil(remaining * 10) / 10}s`, 0.24);
+- `src/main.js:10093` onChannelInterrupted: ({ index }) => {
+- `src/main.js:10095` setTransientMessage(`Lock ${Math.max(1, Math.floor(Number(index) || 0) + 1)} alignment interrupted.`, 1.08);
+- `src/main.js:10097` onLockCompleted: ({ index, remaining }) => {
+- `src/main.js:10103` setTransientMessage(`Resonance Lock ${Math.max(1, Number(index) + 1)} aligned.`, 1.05);
+- `src/main.js:10768` const payload = endgameAct3LorePanelsPending.payload ?? {};
+- `src/main.js:10772` if (index === 0 && payload.preface) extra = `\n\n${String(payload.preface)}`;
+- `src/main.js:10773` if (index === 1 && payload.tierThread) extra = `\n\n${String(payload.tierThread)}`;
+- `src/main.js:10774` if (index === 2 && payload.finalLine) extra = `\n\n${String(payload.finalLine)}`;
+- `src/main.js:10777` text: `${String(panel?.text ?? "")}${extra}`,
+- `src/main.js:10851` startLastSpireRiftSetpiece({ force: false });
+- `src/main.js:10865` if (!isRiftCrossingActive({ active: lastSpireState.riftActive })) {
+- `src/main.js:11118` startLastSpireCoreSetpiece({ force: false });
+- `src/main.js:11785` const zone = vaelorisPatrolFrame.zone ?? {};
+- `src/main.js:11996` setFlags: outcome.setFlags && typeof outcome.setFlags === "object" ? { ...outcome.setFlags } : {},
+- `src/main.js:12001` function tryTriggerWillowMeetEvent({ force = false } = {}) {
+- `src/main.js:12257` function updateVaelorisPatrolPressure(dtSeconds, { allowSpawn = true } = {}) {
+- `src/main.js:12283` setTransientMessage(`A ${stageLabel} Vaeloris patrol moves on the ridge trail.`, VAELORIS_PATROL_COOLDOWN_TOAST_SECONDS);
+- `src/main.js:12283` setTransientMessage(`A ${stageLabel} Vaeloris patrol moves on the ridge trail.`, VAELORIS_PATROL_COOLDOWN_TOAST_SECONDS);
+- `src/main.js:12534` function updateVaelorisFieldOperation(dtSeconds, { allowTrigger = true } = {}) {
+- `src/main.js:12810` sceneManager.requestTransition("thornmere", { flow: "opening-complete" });
+- `src/main.js:14569` function castWillowSpell(spellKey, { showFailureToast = true, fromUi = false, fromAi = false } = {}) {
+- `src/main.js:14572` return { started: false, reason: "invalid_key" };
+- `src/main.js:14575` return { started: false, reason: "blocked" };
+- `src/main.js:14580` return { started: false, reason: "missing_spell" };
+- `src/main.js:14587` return { started: false, reason: "cooldown" };
+- `src/main.js:14593` return { started: false, reason: "mp" };
+- `src/main.js:14792` function updateWillowAutoStance(deltaSeconds, { freezeInput = false } = {}) {
+- `src/main.js:14827` function updateWillowSupportAi(deltaSeconds, { allowAi = true, combatActive = false } = {}) {
+- `src/main.js:14827` function updateWillowSupportAi(deltaSeconds, { allowAi = true, combatActive = false } = {}) {
+- `src/main.js:14969` function updateArthurInactiveAi(deltaSeconds, { allowAi = true } = {}) {
+- `src/main.js:14984` const partyAiState = partySystem.getAiState?.() ?? { members: [] };
+- `src/main.js:15045` function updateElaineSupportAi(deltaSeconds, { allowAi = true, combatActive = false } = {}) {
+- `src/main.js:15059` if (tryStartElaineSpell(ELAINE_SPELLS.resurrect, { showFailureToast: false })) {
+- `src/main.js:15066` if (tryStartElaineSpell(ELAINE_SPELLS.singleHeal, { showFailureToast: false })) {
+- `src/main.js:15073` if (tryStartElaineSpell(ELAINE_SPELLS.groupHeal, { showFailureToast: false })) {
+- `src/main.js:15259` function updateObjectiveTelemetry(deltaSeconds, objectiveState, { stationary = false } = {}) {
+- `src/main.js:15264` const telemetryKey = `${objectiveId}:${hintSceneId}:${currentSceneInfo.sceneId}`;
+- `src/main.js:15444` function updateIdleBanter(deltaSeconds, { freezeInput = false } = {}) {
+- `src/main.js:15445` const context = buildBanterContext({ deltaSeconds, freezeInput });
+- `src/main.js:15469` const partySnapshot = partySystem.getState?.() ?? {};
+- `src/main.js:15473` ? { x: player.position.x, z: player.position.z }
+- `src/main.js:15474` : partySnapshot.arthurProxy ?? { x: player.position.x, z: player.position.z };
+- `src/main.js:15469` const partySnapshot = partySystem.getState?.() ?? {};
+- `src/main.js:15473` ? { x: player.position.x, z: player.position.z }
+- `src/main.js:15474` : partySnapshot.arthurProxy ?? { x: player.position.x, z: player.position.z };
+- `src/main.js:16491` sceneName: `Scene: ${currentSceneInfo.sceneName}`,
+- `src/main.js:17566` worldContext: { context: getEffectiveMovementContext() },
+
+## Potentially unused debug hooks
+- `debug_add_shards`
+- `debug_boss_hud`
+- `debug_clear_vein_flags`
+- `debug_damage_elaine`
+- `debug_damage_guardian`
+- `debug_force_phase`
+- `debug_force_relay_complete`
+- `debug_force_setpiece_complete`
+- `debug_force_willow_join`
+- `debug_get_boss`
+- `debug_get_boss_state`
+- `debug_get_crown_mood_tier`
+- `debug_get_guardian`
+- `debug_get_upgrades`
+- `debug_get_vaeloris`
+- `debug_get_vaeloris_pressure_stage`
+- `debug_mark_map_dirty`
+- `debug_randomize_seed`
+- `debug_set_active_member`
+- `debug_set_banter_frequency`
+- `debug_set_breach_meter`
+- `debug_set_memory_pressure`
+- `debug_set_rift_stability`
+- `debug_set_willow_joined`
+- `debug_spawn_ambush`
+- `debug_spawn_echo_nodes`
+- `debug_spawn_guardian`
+- `debug_spawn_vaeloris_patrol`
+- `debug_toggle_ai_overlay`
+- `debug_trigger_act2_fallout`
+- `debug_trigger_ch6_arrival`
