@@ -225,6 +225,25 @@ function getEnemyHealth(state, enemyId) {
   return state.enemies.find((enemy) => enemy.id === enemyId)?.health ?? 0;
 }
 
+async function forceArthurKillNearPlayer(page, { role = "skirmisher" } = {}) {
+  const result = await page.evaluate((nextRole) => {
+    window.debug_set_active_character?.("arthur");
+    window.debug_set_enemy_attacks_enabled?.(false);
+    window.debug_set_combat_active?.(true);
+    return window.debug_force_enemy_kill_near_player?.(nextRole);
+  }, role);
+  const enemyId = String(result?.enemyId ?? "");
+  if (!enemyId) {
+    throw new Error("Failed to spawn debug enemy for Arthur kill");
+  }
+  await advance(page, 120);
+  const state = await page.evaluate((id) => window.debug_get_enemy_state?.(id), enemyId);
+  if (result?.killConfirmed || state?.state === "dead") {
+    return enemyId;
+  }
+  throw new Error(`Arthur failed to kill enemy ${enemyId}`);
+}
+
 function distance2d(a, b) {
   return Math.hypot((Number(a?.x) || 0) - (Number(b?.x) || 0), (Number(a?.z) || 0) - (Number(b?.z) || 0));
 }
@@ -461,6 +480,25 @@ async function enableWillowParty(
     { mobile: forceMobileUi, disableAttacks: disableEnemyAttacks, nextScene: sceneId }
   );
   await advance(page, 240);
+}
+
+async function setupArthurRageScenario(page, { sceneId = "hollowScar", showPartyHud = true } = {}) {
+  await page.evaluate(
+    ({ nextScene, withPartyHud }) => {
+      window.debug_warp_to_scene?.(nextScene);
+      window.debug_set_active_character?.("arthur");
+      window.debug_set_enemy_attacks_enabled?.(false);
+      window.debug_set_combat_active?.(true);
+      window.debug_defeat_all_enemies?.();
+      window.debug_set_occlusion_fade_enabled?.(true);
+      window.debug_set_rage_stacks?.(0);
+      if (withPartyHud) {
+        window.debug_set_story_flag?.("elaine_joined", true);
+      }
+    },
+    { nextScene: sceneId, withPartyHud: showPartyHud }
+  );
+  await advance(page, 260);
 }
 
 async function unlockEmberfallPath(page) {
@@ -4652,6 +4690,160 @@ test.describe("status effects", () => {
     const focusDamage = Number(focusCast.damageDealt ?? 0);
     expect(focusDamage).toBeGreaterThanOrEqual(noFocusDamage);
     await page.evaluate(() => window.debug_set_combat_active?.(false));
+  });
+});
+
+test.describe("Arthur rage passive and occlusion fade", () => {
+  test("Arthur kill passive heals 10% max HP and grants Rage x1 for 10 seconds", async ({ page }) => {
+    await setupArthurRageScenario(page, { sceneId: "hollowScar", showPartyHud: true });
+    await page.evaluate(() => {
+      window.debug_set_hp?.(40);
+      window.debug_set_rage_stacks?.(0);
+    });
+    await advance(page, 80);
+
+    const before = await getState(page);
+    await forceArthurKillNearPlayer(page, { role: "skirmisher" });
+    await advance(page, 180);
+
+    const after = await getState(page);
+    const rage = await page.evaluate(() => window.debug_get_rage_state?.());
+    expect(after.player_health).toBeGreaterThanOrEqual(before.player_health + 9.8);
+    expect(after.player_health).toBeLessThanOrEqual(before.player_health + 10.2);
+    expect(rage?.stacks).toBe(1);
+    expect(rage?.remainingMs).toBeGreaterThan(9500);
+    await expect(page.locator("[data-testid='arthur-rage']")).toHaveText("Rage x1");
+  });
+
+  test("Rage caps at 10 stacks and extra kills refresh timer without exceeding cap", async ({ page }) => {
+    await setupArthurRageScenario(page, { sceneId: "hollowScar", showPartyHud: true });
+    await page.evaluate(() => {
+      window.debug_set_hp?.(85);
+      window.debug_set_rage_stacks?.(0);
+    });
+    await advance(page, 80);
+
+    for (let i = 0; i < 10; i += 1) {
+      await forceArthurKillNearPlayer(page, { role: "skirmisher" });
+    }
+    let rage = await page.evaluate(() => window.debug_get_rage_state?.());
+    expect(rage?.stacks).toBe(10);
+    expect(rage?.remainingMs).toBeGreaterThan(9400);
+
+    await advance(page, 3200);
+    const decayed = await page.evaluate(() => window.debug_get_rage_state?.());
+    expect(decayed?.remainingMs).toBeLessThan(7600);
+
+    await forceArthurKillNearPlayer(page, { role: "skirmisher" });
+    rage = await page.evaluate(() => window.debug_get_rage_state?.());
+    expect(rage?.stacks).toBe(10);
+    expect(rage?.remainingMs).toBeGreaterThan(9500);
+  });
+
+  test("Arthur Rage stacks increase outgoing melee damage deterministically", async ({ page }) => {
+    await setupArthurRageScenario(page, { sceneId: "hollowScar", showPartyHud: false });
+    const enemyId = await page.evaluate(() => {
+      const state = JSON.parse(window.render_game_to_text?.() ?? "{}");
+      const playerX = Number(state.player?.x ?? 0);
+      const playerZ = Number(state.player?.z ?? 0);
+      return window.debug_spawn_enemy_type?.("brute", playerX + 1.35, playerZ + 0.02) ?? "";
+    });
+    expect(enemyId).toBeTruthy();
+    await advance(page, 120);
+
+    const enemyState = await page.evaluate((id) => window.debug_get_enemy_state?.(id), enemyId);
+    await page.evaluate(
+      ({ id, x, z }) => {
+        window.debug_teleport_player?.(x - 0.58, z);
+        window.debug_set_target_entity?.(id);
+        window.debug_set_target_hp?.(240);
+        window.debug_set_rage_stacks?.(0);
+      },
+      { id: enemyId, x: enemyState.x, z: enemyState.z }
+    );
+    await advance(page, 180);
+
+    let before = await getState(page);
+    let hpBefore = getEnemyHealth(before, enemyId);
+    await page.evaluate(() => window.debug_force_attack?.("light"));
+    await advance(page, 220);
+    let after = await getState(page);
+    const damageWithoutRage = hpBefore - getEnemyHealth(after, enemyId);
+    expect(damageWithoutRage).toBeGreaterThan(0);
+
+    await page.evaluate((id) => {
+      window.debug_set_target_entity?.(id);
+      window.debug_set_target_hp?.(240);
+      window.debug_set_rage_stacks?.(5);
+    }, enemyId);
+    await advance(page, 120);
+
+    before = await getState(page);
+    hpBefore = getEnemyHealth(before, enemyId);
+    await page.evaluate(() => window.debug_force_attack?.("light"));
+    await advance(page, 220);
+    after = await getState(page);
+    const damageWithRage = hpBefore - getEnemyHealth(after, enemyId);
+    expect(damageWithRage).toBeGreaterThan(damageWithoutRage * 1.4);
+  });
+
+  test("Rage expires after 10 seconds without kills", async ({ page }) => {
+    await setupArthurRageScenario(page, { sceneId: "hollowScar", showPartyHud: false });
+    await page.evaluate(() => window.debug_set_rage_stacks?.(4));
+    await advance(page, 80);
+
+    let rage = await page.evaluate(() => window.debug_get_rage_state?.());
+    expect(rage?.stacks).toBe(4);
+    expect(rage?.remainingMs).toBeGreaterThan(9500);
+
+    await page.evaluate(() => window.debug_tick?.(10.2));
+    await advance(page, 100);
+    rage = await page.evaluate(() => window.debug_get_rage_state?.());
+    expect(rage?.stacks).toBe(0);
+    expect(rage?.remainingMs).toBe(0);
+  });
+
+  test("Arthur fades on overlap so nearby enemy remains visible", async ({ page }) => {
+    await setupArthurRageScenario(page, { sceneId: "hollowScar", showPartyHud: true });
+
+    const candidateOffsets = [
+      { x: 0.18, z: -0.06 },
+      { x: 0.14, z: 0.0 },
+      { x: 0.24, z: -0.02 },
+    ];
+    let occlusionEnemyId = "";
+    let fadeActive = false;
+    for (const offset of candidateOffsets) {
+      occlusionEnemyId = await page.evaluate(({ dx, dz }) => {
+        window.debug_defeat_all_enemies?.();
+        const state = JSON.parse(window.render_game_to_text?.() ?? "{}");
+        const px = Number(state.player?.x ?? 0);
+        const pz = Number(state.player?.z ?? 0);
+        const spawned = window.debug_spawn_enemy_type?.("skirmisher", px + dx, pz + dz);
+        window.debug_set_target_entity?.(spawned);
+        return String(spawned ?? "");
+      }, { dx: offset.x, dz: offset.z });
+      await advance(page, 220);
+      const renderState = await page.evaluate(() => window.debug_get_render_state?.());
+      fadeActive = Boolean(renderState?.occlusionFadeActive);
+      if (fadeActive) {
+        break;
+      }
+    }
+
+    expect(fadeActive).toBe(true);
+    const renderState = await page.evaluate(() => window.debug_get_render_state?.());
+    expect(renderState?.occlusionFadeEnabled).toBe(true);
+    expect(Number(renderState?.characters?.arthur?.baseOpacity ?? 1)).toBeLessThan(0.75);
+
+    const state = await getState(page);
+    const enemy = state.enemies.find((entry) => entry.id === occlusionEnemyId);
+    expect(enemy && enemy.state !== "dead").toBeTruthy();
+    await expect(page).toHaveScreenshot("enemy-visible-behind-player.png", {
+      animations: "disabled",
+      fullPage: true,
+      maxDiffPixels: 420,
+    });
   });
 });
 

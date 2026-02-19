@@ -4,6 +4,7 @@ const FOCUS_ATTACKER_ID = "willow";
 
 export const STATUS_EFFECT_IDS = Object.freeze({
   BUFF_ATTDEF: "buff_attdef",
+  ARTHUR_RAGE: "arthur_rage",
   IGNITE_MARK: "ignite_mark",
   WITHER_MARK: "wither_mark",
   FOCUS_MARK: "focus_mark",
@@ -23,6 +24,14 @@ export const STATUS_EFFECT_DEFINITIONS = Object.freeze({
     positive: true,
     attackMultiplier: 1.5,
     defenseMultiplier: 1.5,
+    nonStackable: true,
+  }),
+  [STATUS_EFFECT_IDS.ARTHUR_RAGE]: Object.freeze({
+    id: STATUS_EFFECT_IDS.ARTHUR_RAGE,
+    icon: "buff_attdef",
+    positive: true,
+    attackMultiplierPerCharge: 0.1,
+    maxCharges: 10,
     nonStackable: true,
   }),
   [STATUS_EFFECT_IDS.IGNITE_MARK]: Object.freeze({
@@ -104,6 +113,7 @@ export const STATUS_EFFECT_DEFINITIONS = Object.freeze({
 
 const EFFECT_ORDER = Object.freeze([
   STATUS_EFFECT_IDS.BUFF_ATTDEF,
+  STATUS_EFFECT_IDS.ARTHUR_RAGE,
   STATUS_EFFECT_IDS.SUPPRESSION_FIELD,
   STATUS_EFFECT_IDS.SILENCED_ROOTS,
   STATUS_EFFECT_IDS.NULL_SILENCE,
@@ -330,8 +340,20 @@ export class StatusEffectManager {
     let multiplier = 1;
     for (const effect of effects) {
       const definition = this._getEffectDefinition(effect.id);
-      if (!definition?.attackMultiplier) continue;
-      multiplier *= definition.attackMultiplier;
+      if (!definition) continue;
+      if (definition.attackMultiplier) {
+        multiplier *= definition.attackMultiplier;
+      }
+      const stackScale = Math.max(0, Number(definition.attackMultiplierPerCharge) || 0);
+      if (stackScale > 0) {
+        const maxStacks = Number.isFinite(Number(definition.maxCharges))
+          ? Math.max(0, Number(definition.maxCharges) || 0)
+          : Number.POSITIVE_INFINITY;
+        const stacks = Math.min(maxStacks, Math.max(0, Number(effect.charges) || 0));
+        if (stacks > 0) {
+          multiplier *= 1 + stackScale * stacks;
+        }
+      }
     }
     return multiplier;
   }

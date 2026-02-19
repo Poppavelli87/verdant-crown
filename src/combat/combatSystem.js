@@ -872,6 +872,7 @@ export class CombatSystem {
   _applyAttackEvent(playerPosition, attackEvent, onEnemyHit) {
     const target = this._selectEnemyForAttack(playerPosition, attackEvent);
     if (!target) return 0;
+    const resolvedAttackerId = String(attackEvent.attackerId ?? "arthur");
     const sourceX = Number(attackEvent?.sourcePosition?.x);
     const sourceZ = Number(attackEvent?.sourcePosition?.z ?? attackEvent?.sourcePosition?.y);
     const attackOrigin = {
@@ -894,7 +895,7 @@ export class CombatSystem {
     }
     damageAmount = this._resolveDamageAmount({
       baseDamage: damageAmount,
-      attackerId: attackEvent.attackerId ?? "arthur",
+      attackerId: resolvedAttackerId,
       targetId: target.id,
       attackType: attackEvent.type ?? "light",
       damageType: attackEvent.damageType ?? "physical",
@@ -925,17 +926,20 @@ export class CombatSystem {
       if (shouldStagger) {
         target.staggerRemaining = Math.max(target.staggerRemaining, staggerDuration);
       }
-      if (target.health <= 0 && target.state !== ENEMY_STATES.DEAD) {
+      const killed = target.health <= 0 && target.state !== ENEMY_STATES.DEAD;
+      if (killed) {
         target.markDead();
         this.totalEnemiesDefeated += 1;
         this._spawnLootOrb(target.position);
       }
       onEnemyHit?.({
+        attackerId: resolvedAttackerId,
         type: attackEvent.type,
         chargeRatio: attackEvent.chargeRatio ?? 0,
         direction: hitDirection,
         targetId: target.id,
         damage: dealt,
+        killed,
         blocked: frontBlocked,
       });
     }

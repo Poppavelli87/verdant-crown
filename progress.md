@@ -3517,3 +3517,12 @@ Added missing prop sprites used by Windward/Region4/Chapter flows:
 ### Known limitations
 - Browser may emit non-fatal GPU stall warnings during screenshot-heavy runs (`ReadPixels`); they are captured as warnings but do not fail runs.
 - Heap metrics are best-effort and depend on browser support for `performance.memory`.
+
+## 2026-02-19 - Arthur occlusion + rage passive (in progress)
+- Started targeted implementation for close-quarters sprite occlusion and Arthur kill passive.
+- Added feet-based depth helper APIs in `src/render/billboard.js` and switched enemy/player draw ordering to use feet-aware sort keys.
+- Added active Arthur occlusion-fade runtime (screen-rect overlap check + smooth opacity blend) and debug toggle/getters.
+- Added new status effect id `arthur_rage` with stack-aware attack multiplier plumbing in `StatusEffectManager`.
+- Added Arthur rage/heal helper functions and kill hook wiring via combat hit callbacks.
+- Added HUD plumbing scaffold for `data-testid="arthur-rage"` and debug state fields for rage/occlusion assertions.
+- Next: run deterministic Playwright tests for rage stack/timer/damage/expiry and occlusion snapshot, then finalize commit.

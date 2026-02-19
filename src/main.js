@@ -425,6 +425,22 @@ const WILLOW_GEM_PULSE_MIN = 0.16;
 const WILLOW_GEM_PULSE_MAX = 0.58;
 const WILLOW_BOLT_LIGHT_DAMAGE = 6;
 const WILLOW_BOLT_CHARGED_DAMAGE = 9;
+const ARTHUR_KILL_HEAL_RATIO = 0.1;
+const ARTHUR_RAGE_MAX_STACKS = 10;
+const ARTHUR_RAGE_DURATION_SECONDS = 10;
+const ARTHUR_OCCLUSION_FADE_MIN_OPACITY = 0.62;
+const ARTHUR_OCCLUSION_FADE_SMOOTHING = 16;
+const ARTHUR_OCCLUSION_FADE_CLOSE_RANGE = 0.92;
+const ARTHUR_OCCLUSION_BODY_REGION_DEPTH = -0.04;
+const ENEMY_OCCLUSION_BOUNDS = Object.freeze({
+  skirmisher: Object.freeze({ width: 1.06, height: 1.42, centerY: 0.08 }),
+  brute: Object.freeze({ width: 1.35, height: 1.55, centerY: 0.08 }),
+  harrier: Object.freeze({ width: 1.16, height: 1.46, centerY: 0.08 }),
+  construct: Object.freeze({ width: 1.28, height: 1.56, centerY: 0.08 }),
+  striker: Object.freeze({ width: 1.08, height: 1.44, centerY: 0.08 }),
+  bulwark: Object.freeze({ width: 1.42, height: 1.62, centerY: 0.08 }),
+  hexer: Object.freeze({ width: 1.2, height: 1.5, centerY: 0.08 }),
+});
 const STATUS_ENTITY_IDS = Object.freeze({
   ARTHUR: "arthur",
   ELAINE: "elaine",
@@ -3419,12 +3435,121 @@ function screenToWorld(clientX, clientY) {
 }
 
 function worldToScreen(worldX, worldZ) {
+  return worldToScreen3D(worldX, 0, worldZ);
+}
+
+function worldToScreen3D(worldX, worldY, worldZ) {
   const rect = canvas.getBoundingClientRect();
-  projectedPoint.set(worldX, 0, worldZ).project(camera);
+  projectedPoint.set(worldX, worldY, worldZ).project(camera);
   return {
     x: rect.left + ((projectedPoint.x + 1) * 0.5) * rect.width,
     y: rect.top + ((1 - projectedPoint.y) * 0.5) * rect.height,
   };
+}
+
+function getSpriteScreenRect({ x, y, z, width, height, centerY = 0.5 }) {
+  const halfWidth = Math.max(0.01, Number(width) || 0.01) * 0.5;
+  const spriteHeight = Math.max(0.01, Number(height) || 0.01);
+  const anchorY = Number(y) || 0;
+  const clampedCenter = Math.max(0, Math.min(1, Number(centerY) || 0.5));
+  const topWorldY = anchorY + spriteHeight * (1 - clampedCenter);
+  const bottomWorldY = anchorY - spriteHeight * clampedCenter;
+
+  const leftPoint = worldToScreen3D(x - halfWidth, anchorY, z);
+  const rightPoint = worldToScreen3D(x + halfWidth, anchorY, z);
+  const topPoint = worldToScreen3D(x, topWorldY, z);
+  const bottomPoint = worldToScreen3D(x, bottomWorldY, z);
+
+  const minX = Math.min(leftPoint.x, rightPoint.x);
+  const maxX = Math.max(leftPoint.x, rightPoint.x);
+  const minY = Math.min(topPoint.y, bottomPoint.y);
+  const maxY = Math.max(topPoint.y, bottomPoint.y);
+
+  return {
+    left: minX,
+    right: maxX,
+    top: minY,
+    bottom: maxY,
+  };
+}
+
+function rectsOverlap(rectA, rectB) {
+  return !(
+    rectA.right < rectB.left ||
+    rectA.left > rectB.right ||
+    rectA.bottom < rectB.top ||
+    rectA.top > rectB.bottom
+  );
+}
+
+function getRectOverlapArea(rectA, rectB) {
+  const overlapWidth = Math.max(0, Math.min(rectA.right, rectB.right) - Math.max(rectA.left, rectB.left));
+  const overlapHeight = Math.max(0, Math.min(rectA.bottom, rectB.bottom) - Math.max(rectA.top, rectB.top));
+  return overlapWidth * overlapHeight;
+}
+
+function updateActiveCharacterOcclusionFade(dtSeconds) {
+  if (activePartyMember !== "arthur") {
+    playerOcclusionTargetOpacity = 1;
+    playerOcclusionOpacity = 1;
+    playerOcclusionOverlapEnemyId = "";
+    return playerOcclusionOpacity;
+  }
+  if (!occlusionFadeEnabled) {
+    playerOcclusionTargetOpacity = 1;
+    playerOcclusionOpacity = 1;
+    playerOcclusionOverlapEnemyId = "";
+    return playerOcclusionOpacity;
+  }
+
+  const playerRect = getSpriteScreenRect({
+    x: player.position.x,
+    y: player.position.y,
+    z: player.position.z,
+    width: player.scale.x * 0.56,
+    height: player.scale.y * 0.74,
+    centerY: player.center.y,
+  });
+
+  const enemies = combatSystem.getEnemySnapshots();
+  let overlapEnemyId = "";
+  let shouldFade = false;
+  for (const enemy of enemies) {
+    if (!enemy || enemy.state === "dead" || Number(enemy.health) <= 0) continue;
+    const enemyX = Number(enemy.x) || 0;
+    const enemyZ = Number(enemy.z) || 0;
+    const deltaX = Math.abs(enemyX - player.position.x);
+    const deltaZ = Math.abs(enemyZ - player.position.z);
+    if (deltaX > 0.52 || deltaZ > ARTHUR_OCCLUSION_FADE_CLOSE_RANGE) continue;
+    const distance = Math.hypot(enemyX - player.position.x, enemyZ - player.position.z);
+    if (distance > ARTHUR_OCCLUSION_FADE_CLOSE_RANGE) continue;
+
+    const bounds = ENEMY_OCCLUSION_BOUNDS[String(enemy.role ?? "skirmisher")] ?? ENEMY_OCCLUSION_BOUNDS.skirmisher;
+    const enemyRect = getSpriteScreenRect({
+      x: enemyX,
+      y: 0,
+      z: enemyZ,
+      width: bounds.width * 0.68,
+      height: bounds.height * 0.74,
+      centerY: bounds.centerY,
+    });
+    if (!rectsOverlap(playerRect, enemyRect)) continue;
+    const playerRectArea = Math.max(1, (playerRect.right - playerRect.left) * (playerRect.bottom - playerRect.top));
+    const overlapArea = getRectOverlapArea(playerRect, enemyRect);
+    if (overlapArea / playerRectArea < 0.16) continue;
+    // Fade only when enemy is not clearly in front of Arthur's body region.
+    if (enemyZ > player.position.z + ARTHUR_OCCLUSION_BODY_REGION_DEPTH) continue;
+    shouldFade = true;
+    overlapEnemyId = String(enemy.id ?? "");
+    break;
+  }
+
+  playerOcclusionTargetOpacity = shouldFade ? ARTHUR_OCCLUSION_FADE_MIN_OPACITY : 1;
+  playerOcclusionOverlapEnemyId = overlapEnemyId;
+  const blend = Math.max(0, Math.min(1, dtSeconds * ARTHUR_OCCLUSION_FADE_SMOOTHING));
+  playerOcclusionOpacity += (playerOcclusionTargetOpacity - playerOcclusionOpacity) * blend;
+  playerOcclusionOpacity = Math.max(0, Math.min(1, playerOcclusionOpacity));
+  return playerOcclusionOpacity;
 }
 
 const world = new WorldState(
@@ -3792,6 +3917,10 @@ let activeWeaponMounted = true;
 let lastAttackTypePlayed = "";
 let lastRenderedAnimState = "idle";
 let lastPlayerMeleeEventCount = 0;
+let occlusionFadeEnabled = true;
+let playerOcclusionOpacity = 1;
+let playerOcclusionTargetOpacity = 1;
+let playerOcclusionOverlapEnemyId = "";
 const weaponTextureCache = new Map();
 
 const fallbackPlayerTexture = createProceduralPlayerSpriteSheetTexture();
@@ -13674,11 +13803,14 @@ function updatePlayerPresentation(dtSeconds, movementInfo) {
     playerMaterial.color.lerp(PLAYER_HIT_FLASH_COLOR, flashMix);
   }
   player.scale.set(PLAYER_SPRITE_WORLD_WIDTH * CHARACTER_SCALE, PLAYER_SPRITE_WORLD_HEIGHT * CHARACTER_SCALE, 1);
+  const occlusionOpacity = updateActiveCharacterOcclusionFade(dtSeconds);
   player.renderOrder = resolveDepthOrder(player.position.z, 1200);
+  playerMaterial.opacity = occlusionOpacity;
   playerOutline.position.set(player.position.x, player.position.y, player.position.z);
   playerOutline.scale.set(2.52 * CHARACTER_SCALE, 3.34 * CHARACTER_SCALE, 1);
   playerOutline.renderOrder = resolveDepthOrder(player.position.z, 1195);
-  playerOutlineMaterial.opacity = playerHitFlashRemaining > 0 ? 0.84 : combatActive ? 0.7 : 0.62;
+  const baseOutlineOpacity = playerHitFlashRemaining > 0 ? 0.84 : combatActive ? 0.7 : 0.62;
+  playerOutlineMaterial.opacity = baseOutlineOpacity * occlusionOpacity;
   playerShadow.position.set(player.position.x, -0.885, player.position.z);
   playerShadow.renderOrder = resolveDepthOrder(player.position.z, 980);
   playerShadow.material.opacity = combatActive ? 0.29 : 0.24;
@@ -13725,6 +13857,53 @@ function healArthur(amount) {
   const before = playerState.hp;
   playerState.setHP(playerState.hp + scaledAmount);
   return Math.max(0, playerState.hp - before);
+}
+
+function getArthurRageState() {
+  const effect = statusEffects.getEffect(STATUS_ENTITY_IDS.ARTHUR, STATUS_EFFECT_IDS.ARTHUR_RAGE);
+  const stacks = Math.max(
+    0,
+    Math.min(ARTHUR_RAGE_MAX_STACKS, Math.floor(Number(effect?.charges) || 0))
+  );
+  const remainingSeconds = Math.max(0, Number(effect?.remainingSeconds) || 0);
+  return {
+    stacks,
+    remainingSeconds: Number(remainingSeconds.toFixed(3)),
+    remainingMs: Math.max(0, Math.round(remainingSeconds * 1000)),
+  };
+}
+
+function setArthurRageStacks(stacks, { refreshDurationSeconds = ARTHUR_RAGE_DURATION_SECONDS } = {}) {
+  const nextStacks = Math.max(0, Math.min(ARTHUR_RAGE_MAX_STACKS, Math.floor(Number(stacks) || 0)));
+  statusEffects.removeEffect(STATUS_ENTITY_IDS.ARTHUR, STATUS_EFFECT_IDS.ARTHUR_RAGE);
+  if (nextStacks <= 0) {
+    return getArthurRageState();
+  }
+  statusEffects.addEffect(STATUS_ENTITY_IDS.ARTHUR, {
+    id: STATUS_EFFECT_IDS.ARTHUR_RAGE,
+    durationSeconds: Math.max(0.05, Number(refreshDurationSeconds) || ARTHUR_RAGE_DURATION_SECONDS),
+    charges: nextStacks,
+    sourceId: STATUS_ENTITY_IDS.ARTHUR,
+  });
+  return getArthurRageState();
+}
+
+function triggerArthurKillPassive() {
+  const healed = healArthur(playerState.maxHP * ARTHUR_KILL_HEAL_RATIO);
+  const currentRage = getArthurRageState();
+  const nextStacks = Math.min(ARTHUR_RAGE_MAX_STACKS, currentRage.stacks + 1);
+  statusEffects.addEffect(STATUS_ENTITY_IDS.ARTHUR, {
+    id: STATUS_EFFECT_IDS.ARTHUR_RAGE,
+    durationSeconds: ARTHUR_RAGE_DURATION_SECONDS,
+    charges: nextStacks,
+    sourceId: STATUS_ENTITY_IDS.ARTHUR,
+  });
+  const nextRage = getArthurRageState();
+  return {
+    healed: Number(healed.toFixed(3)),
+    stacks: nextRage.stacks,
+    remainingMs: nextRage.remainingMs,
+  };
 }
 
 function healElaine(amount) {
@@ -14241,14 +14420,16 @@ function getLegacyWillowDebuffState() {
 
 function getStatusIcons(entityId) {
   const effects = statusEffects.getEffects(entityId);
-  return effects.map((effect) => ({
+  return effects
+    .filter((effect) => effect.id !== STATUS_EFFECT_IDS.ARTHUR_RAGE)
+    .map((effect) => ({
     id: effect.id,
     icon: effect.icon,
     remaining: Number(Math.max(0, effect.remainingSeconds).toFixed(3)),
     charges: effect.charges == null ? null : effect.charges,
     expiring: effect.remainingSeconds < 2,
     positive: effect.positive === true,
-  }));
+    }));
 }
 
 function resolveDebugEntityId(entityId) {
@@ -14267,6 +14448,9 @@ function resolveDebugEntityId(entityId) {
 function normalizeDebugEffectId(effectId) {
   const normalized = String(effectId ?? "").trim().toLowerCase();
   if (!normalized) return "";
+  if (normalized === STATUS_EFFECT_IDS.ARTHUR_RAGE || normalized === "rage" || normalized === "arthur_rage") {
+    return STATUS_EFFECT_IDS.ARTHUR_RAGE;
+  }
   if (normalized === STATUS_EFFECT_IDS.BUFF_ATTDEF || normalized === "buff" || normalized === "buff_attdef") {
     return STATUS_EFFECT_IDS.BUFF_ATTDEF;
   }
@@ -16521,6 +16705,7 @@ function applyWorldVisuals(deltaSeconds) {
       : "",
     guidanceText: guidanceLineText,
     questText: currentQuestText,
+    arthurRage: getArthurRageState(),
     partyHealth,
     partyStatus,
     targetStatus,
@@ -17739,7 +17924,12 @@ function update(deltaSeconds) {
       }
     }
   }
-  const activeMeleeAttackerId = activePartyMember === "elaine" ? STATUS_ENTITY_IDS.ELAINE : STATUS_ENTITY_IDS.ARTHUR;
+  const activeMeleeAttackerId =
+    activePartyMember === "elaine"
+      ? STATUS_ENTITY_IDS.ELAINE
+      : activePartyMember === "willow"
+        ? STATUS_ENTITY_IDS.WILLOW
+        : STATUS_ENTITY_IDS.ARTHUR;
   const guardianAttackResult = guardianCombatForced
     ? bossInstance.applyPlayerAttackEvents(playerMeleeAttackEvents, player.position, {
         heavyDamageMultiplier: playerHeavyDamageMultiplier,
@@ -17774,6 +17964,9 @@ function update(deltaSeconds) {
     onEnemyHit: (hit) => {
       if (hit?.targetId) {
         lastArthurTargetEnemyId = hit.targetId;
+      }
+      if (hit?.killed && String(hit.attackerId ?? "") === STATUS_ENTITY_IDS.ARTHUR) {
+        triggerArthurKillPassive();
       }
       if (hit?.targetId && hasElaineJoined() && !elaineDowned) {
         const boltDamage = partySystem.triggerHolyBolt(
@@ -18000,6 +18193,8 @@ function getDebugRenderState() {
   const activeEntry = {
     hasBase: true,
     baseVisible: Boolean(player.visible),
+    baseOpacity: Number((playerMaterial.opacity ?? 1).toFixed(3)),
+    baseOpacityTarget: Number(playerOcclusionTargetOpacity.toFixed(3)),
     hasWeapon: Boolean(activeWeaponSprite.visible),
     weaponScale: Number((activeWeaponSprite.scale?.x ?? 0).toFixed(3)),
     groupScale: Number((player.scale?.x / (PLAYER_SPRITE_WORLD_WIDTH * CHARACTER_SCALE || 1)).toFixed(3)),
@@ -18029,6 +18224,9 @@ function getDebugRenderState() {
 
   return {
     activeCharacter,
+    occlusionFadeEnabled,
+    occlusionFadeActive: playerOcclusionTargetOpacity < 0.999,
+    occlusionOverlapEnemyId: playerOcclusionOverlapEnemyId,
     characters: {
       arthur: buildEntry("arthur"),
       elaine: buildEntry("elaine"),
@@ -18045,6 +18243,7 @@ window.render_game_to_text = () => {
   const completedVeinFlags = Object.keys(saveState.getStoryFlags()).filter(
     (key) => key.startsWith("vein_completed_") && Boolean(saveState.getStoryFlag(key))
   );
+  const arthurRageState = getArthurRageState();
   const debugState = {
     ...world.getPublicDebugState(),
     crown_tier: crownMood.getTierLabel(),
@@ -18084,6 +18283,12 @@ window.render_game_to_text = () => {
     objective_progress_key: currentObjectiveState.progressKey,
     active_character: activePartyMember,
     party_active_member: activePartyMember,
+    arthur_rage_stacks: arthurRageState.stacks,
+    arthur_rage_remaining_ms: arthurRageState.remainingMs,
+    player_occlusion_opacity: Number((playerMaterial.opacity ?? 1).toFixed(3)),
+    player_occlusion_target_opacity: Number(playerOcclusionTargetOpacity.toFixed(3)),
+    player_occlusion_fade_enabled: occlusionFadeEnabled,
+    player_occlusion_overlap_enemy: playerOcclusionOverlapEnemyId,
     party_arthur_downed: arthurDowned,
     party_arthur_bleedout: Number(Math.max(0, arthurBleedoutRemaining).toFixed(3)),
     party_elaine_health: Number(elaineHp.toFixed(2)),
@@ -18825,6 +19030,64 @@ if (DEV_MODE) {
     return playerState.getSnapshot();
   };
   window.debug_get_hp = () => playerState.getSnapshot();
+  window.debug_set_rage_stacks = (value = 0) => {
+    return setArthurRageStacks(value);
+  };
+  window.debug_get_rage_state = () => getArthurRageState();
+  window.debug_set_occlusion_fade_enabled = (enabled = true) => {
+    occlusionFadeEnabled = enabled !== false;
+    if (!occlusionFadeEnabled) {
+      playerOcclusionTargetOpacity = 1;
+      playerOcclusionOpacity = 1;
+      playerOcclusionOverlapEnemyId = "";
+      playerMaterial.opacity = 1;
+    }
+    return {
+      enabled: occlusionFadeEnabled,
+      opacity: Number((playerMaterial.opacity ?? 1).toFixed(3)),
+      targetOpacity: Number(playerOcclusionTargetOpacity.toFixed(3)),
+      overlapEnemyId: playerOcclusionOverlapEnemyId,
+    };
+  };
+  window.debug_get_occlusion_fade_state = () => ({
+    enabled: occlusionFadeEnabled,
+    opacity: Number((playerMaterial.opacity ?? 1).toFixed(3)),
+    targetOpacity: Number(playerOcclusionTargetOpacity.toFixed(3)),
+    overlapEnemyId: playerOcclusionOverlapEnemyId,
+  });
+  window.debug_force_enemy_kill_near_player = (role = "skirmisher") => {
+    const spawnX = player.position.x + 1.02;
+    const spawnZ = player.position.z + 0.02;
+    const enemyId = window.debug_spawn_enemy_type?.(String(role), spawnX, spawnZ);
+    if (!enemyId) {
+      return { spawned: false, enemyId: "", dealt: 0, killConfirmed: false };
+    }
+    lastArthurTargetEnemyId = enemyId;
+    combatSystem.setEnemyHealth(enemyId, 1);
+    const dealt = combatSystem.applySupportDamageToEnemy(
+      enemyId,
+      999,
+      { x: player.position.x, z: player.position.z },
+      {
+        attackerId: STATUS_ENTITY_IDS.ARTHUR,
+        attackType: "debug_finish",
+        source: "debug_arthur_kill",
+        consumeStatusCharges: false,
+      }
+    );
+    const state = combatSystem.getEnemyState(enemyId);
+    const killConfirmed = state?.state === "dead";
+    if (killConfirmed) {
+      triggerArthurKillPassive();
+    }
+    return {
+      spawned: true,
+      enemyId,
+      dealt: Number((dealt ?? 0).toFixed(3)),
+      killConfirmed,
+      rage: getArthurRageState(),
+    };
+  };
   window.debug_damage_player = (amount) => onPlayerDamaged(Number(amount) || 0);
   window.debug_set_crown_mood = (value) => {
     const moodScore = setCrownMood(value, "debug_override");

@@ -64,6 +64,31 @@ export function resolveDepthOrder(worldZ, baseOrder = 1100) {
   return baseOrder + Math.floor((worldZ + 40) * 100);
 }
 
+function clamp01(value) {
+  return Math.max(0, Math.min(1, Number(value) || 0));
+}
+
+export function computeFeetDepthWorldZ(worldZ, spriteHeight = 0, spriteCenterY = 0.5, feetBiasScale = 0.28) {
+  const depthZ = Number(worldZ) || 0;
+  const height = Math.max(0, Number(spriteHeight) || 0);
+  const centerY = clamp01(spriteCenterY);
+  const bias = Math.max(0, Number(feetBiasScale) || 0);
+  // Approximate the feet plane from sprite anchor + visual height so tall sprites
+  // do not monopolize draw priority in close quarters.
+  const centerToFeet = Math.max(0, height * (0.5 - centerY));
+  return depthZ + centerToFeet * bias;
+}
+
+export function resolveFeetDepthOrder(
+  worldZ,
+  spriteHeight = 0,
+  spriteCenterY = 0.5,
+  baseOrder = 1100,
+  feetBiasScale = 0.28
+) {
+  return resolveDepthOrder(computeFeetDepthWorldZ(worldZ, spriteHeight, spriteCenterY, feetBiasScale), baseOrder);
+}
+
 // BillboardSprite keeps a transparent sprite plane facing camera with Y-axis lock only.
 export class BillboardSprite {
   constructor({

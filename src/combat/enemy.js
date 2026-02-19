@@ -1,5 +1,5 @@
 import * as THREE from "https://unpkg.com/three@0.160.0/build/three.module.js";
-import { resolveDepthOrder } from "../render/billboard.js";
+import { computeFeetDepthWorldZ, resolveDepthOrder } from "../render/billboard.js";
 import { ENEMY_STAGGER_SECONDS } from "./damageSystem.js";
 
 const DEAD_FADE_PER_SECOND = 0.95;
@@ -653,14 +653,15 @@ export class Enemy {
     if (!this.group || !this.sprite) return;
 
     this.group.position.set(this.position.x, 0, this.position.y);
-    const depthOrder = resolveDepthOrder(this.position.y, 1160);
+    const feetDepthWorldZ = computeFeetDepthWorldZ(this.position.y, this.sprite.scale.y, this.sprite.center.y, 0.08);
+    const depthOrder = resolveDepthOrder(feetDepthWorldZ, 1160);
     this.group.renderOrder = depthOrder;
     this.sprite.renderOrder = depthOrder;
     if (this.shadow) {
-      this.shadow.renderOrder = resolveDepthOrder(this.position.y, 980);
+      this.shadow.renderOrder = resolveDepthOrder(feetDepthWorldZ, 980);
     }
     if (this.aggroRing) {
-      this.aggroRing.renderOrder = resolveDepthOrder(this.position.y, 1030);
+      this.aggroRing.renderOrder = resolveDepthOrder(feetDepthWorldZ, 1030);
     }
 
     const bobScale = this.state === ENEMY_STATES.AGGRO || this.state === ENEMY_STATES.ATTACK ? 1.35 : 1;
@@ -760,7 +761,7 @@ export class Enemy {
         } else {
           this.projectileTelegraph.material.opacity = 0.2 + attackTellProgress * 0.46;
         }
-        this.projectileTelegraph.renderOrder = resolveDepthOrder(this.position.y, 1042);
+        this.projectileTelegraph.renderOrder = resolveDepthOrder(feetDepthWorldZ, 1042);
       }
     }
 
@@ -803,7 +804,7 @@ export class Enemy {
           );
           this.shieldMesh.material.opacity = 0.12 + telegraphMix * 0.2;
         }
-        this.shieldMesh.renderOrder = resolveDepthOrder(this.position.y, 1043);
+        this.shieldMesh.renderOrder = resolveDepthOrder(feetDepthWorldZ, 1043);
       }
     }
 

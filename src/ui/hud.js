@@ -175,12 +175,26 @@ export function createHud({ version = "" } = {}) {
   partyArthurRow.style.display = "grid";
   partyArthurRow.style.gap = "1px";
   partyArthurRow.style.maxWidth = "152px";
+  partyArthurRow.style.position = "relative";
 
   const partyArthurLabel = document.createElement("div");
   partyArthurLabel.style.fontSize = "10px";
   partyArthurLabel.style.opacity = "0.88";
   partyArthurLabel.style.color = "#f6ded0";
   partyArthurLabel.textContent = "Arthur";
+
+  const arthurRage = document.createElement("div");
+  arthurRage.dataset.testid = "arthur-rage";
+  arthurRage.style.display = "none";
+  arthurRage.style.fontSize = "10px";
+  arthurRage.style.opacity = "0.93";
+  arthurRage.style.color = "#ff9b87";
+  arthurRage.style.position = "absolute";
+  arthurRage.style.top = "11px";
+  arthurRage.style.right = "0";
+  arthurRage.style.pointerEvents = "none";
+  arthurRage.style.textShadow = "0 1px 1px rgba(0, 0, 0, 0.6)";
+  arthurRage.textContent = "Rage x0";
 
   const partyArthurBar = document.createElement("div");
   partyArthurBar.style.width = "136px";
@@ -197,7 +211,7 @@ export function createHud({ version = "" } = {}) {
   partyArthurFill.style.transition = "width 90ms linear";
   partyArthurBar.appendChild(partyArthurFill);
   const statusArthur = createStatusRow("status-arthur");
-  partyArthurRow.append(partyArthurLabel, partyArthurBar, statusArthur);
+  partyArthurRow.append(partyArthurLabel, partyArthurBar, statusArthur, arthurRage);
 
   const partyElaineRow = document.createElement("div");
   partyElaineRow.dataset.testid = "hp-elaine";
@@ -726,6 +740,7 @@ export function createHud({ version = "" } = {}) {
       activeCharacterText = "",
       willowStanceText = "",
       guidanceText = "",
+      arthurRage: arthurRageState = null,
       partyHealth = null,
       partyStatus = null,
       targetStatus = null,
@@ -783,6 +798,7 @@ export function createHud({ version = "" } = {}) {
       }
       hpLine.textContent = `HP ${Math.round(safeHp)}/${safeMaxHp}`;
       hpFill.style.width = `${(hpRatio * 100).toFixed(1)}%`;
+      const rageStacks = Math.max(0, Math.floor(Number(arthurRageState?.stacks) || 0));
       const showPartyPanel = Boolean(partyHealth?.elaine?.available || partyHealth?.willow?.available);
       partyPanel.style.display = showPartyPanel ? "grid" : "none";
       partyArthurRow.style.display = showPartyPanel ? "grid" : "none";
@@ -791,6 +807,12 @@ export function createHud({ version = "" } = {}) {
       const partyArthurRatio = Math.max(0, Math.min(1, partyArthurHp / partyArthurMax));
       const partyArthurDowned = Boolean(partyHealth?.arthur?.downed);
       partyArthurLabel.textContent = `Arthur ${Math.round(partyArthurHp)}/${partyArthurMax}${partyArthurDowned ? " (Downed)" : ""}`;
+      if (rageStacks > 0) {
+        arthurRage.textContent = `Rage x${rageStacks}`;
+        arthurRage.style.display = "block";
+      } else {
+        arthurRage.style.display = "none";
+      }
       partyArthurFill.style.width = `${(partyArthurRatio * 100).toFixed(1)}%`;
       renderStatusIcons(statusArthur, partyStatus?.arthur ?? [], statusTime);
 
