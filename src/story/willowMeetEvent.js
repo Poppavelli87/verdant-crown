@@ -23,8 +23,18 @@ export function tryTriggerWillowMeet(context = {}) {
     willowMet = false,
     willowJoined = false,
     inTriggerZone = false,
+    elaineJoined = false,
     force = false,
   } = context;
+
+  if (!Boolean(elaineJoined)) {
+    return {
+      triggered: false,
+      blocked: true,
+      blockedToast: "A scorched path, but no guide. Return to Thornmere.",
+      objectiveId: OBJECTIVE_IDS.RETURN_TO_ROWAN,
+    };
+  }
 
   if (!force) {
     if (String(currentSceneId ?? "").toLowerCase() !== "emberfall") return { triggered: false };

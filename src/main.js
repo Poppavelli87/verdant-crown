@@ -49,6 +49,7 @@ import {
   resolveCurrentObjective,
 } from "./story/objectives.js";
 import { validateStoryState } from "./story/storyIntegrity.js";
+import { reconcileJoinState, SAVE_MIGRATION_JOIN_STATE_FLAG } from "./story/storyInvariants.js";
 import { CHAPTER3_FLAGS, tryTriggerRowanDebrief } from "./story/rowanDebriefChapter3.js";
 import { CHAPTER4_FLAGS, tryTriggerChapter4RowanReport } from "./story/chapter4RowanReport.js";
 import { CHAPTER5_FLAGS, tryTriggerChapter5Aftershock } from "./story/chapter5Aftershock.js";
@@ -4588,6 +4589,11 @@ partySystem.setJoined(initialElaineJoined, player.position);
 partySystem.setWillowJoined(initialWillowJoined, player.position);
 partySystem.setActiveCharacter(activePartyMember, player.position);
 partySystem.setActiveScene(currentSceneInfo.sceneId, player.position);
+if (!hasJoinStateMigrationApplied()) {
+  applyJoinStateReconciliation({ markMigrated: true });
+} else {
+  applyJoinStateReconciliation();
+}
 shrineSystem.setScene(currentSceneInfo.sceneId);
 if (hasElaineJoined()) {
   resetElaineSupportState({ restoreFull: true });
@@ -5408,6 +5414,7 @@ function forceLoadSceneForDebug(sceneId) {
   partySystem.setActiveScene(currentSceneInfo.sceneId, player.position);
   partySystem.setJoined(hasElaineJoined(), player.position);
   partySystem.setWillowJoined(hasWillowJoined(), player.position);
+  applyJoinStateReconciliation();
   shrineSystem.setScene(currentSceneInfo.sceneId);
   combatSystem.loadScene(currentSceneInfo.sceneId, sceneManager.getEnemySpawns());
   initThreatVeinsForScene(currentSceneInfo.sceneId, currentRngSeed, {
@@ -6008,15 +6015,50 @@ function isEmberfallUnlocked() {
 }
 
 function hasElaineJoined() {
-  return getStoryFlag("elaine_joined");
+  return getStoryFlag("elaine_joined") || Boolean(partySystem.hasMember?.("elaine"));
 }
 
 function hasWillowJoined() {
-  return getStoryFlag("willow_joined");
+  return getStoryFlag("willow_joined") || Boolean(partySystem.hasMember?.("willow"));
 }
 
 function hasPartyCompanionJoined() {
   return hasElaineJoined() || hasWillowJoined();
+}
+
+function hasJoinStateMigrationApplied() {
+  return getStoryFlag(SAVE_MIGRATION_JOIN_STATE_FLAG);
+}
+
+function setJoinStateMigrationApplied(applied) {
+  setStoryFlag(SAVE_MIGRATION_JOIN_STATE_FLAG, Boolean(applied));
+}
+
+function applyJoinStateReconciliation({ markMigrated = false } = {}) {
+  const resolved = reconcileJoinState(saveState.getStoryFlags?.(), {
+    members: partySystem
+      .getState()
+      .members.map((member) => String(member ?? "").trim().toLowerCase()),
+  });
+  if (resolved.changed) {
+    for (const [key, value] of Object.entries(resolved.storyFlags ?? {})) {
+      setStoryValue(key, value);
+    }
+  }
+  const hasElaine = resolved.partyState.members.includes("elaine");
+  const hasWillow = resolved.partyState.members.includes("willow");
+  if (getStoryFlag("elaine_joined") !== hasElaine) {
+    setStoryFlag("elaine_joined", hasElaine);
+  }
+  if (getStoryFlag("willow_joined") !== hasWillow) {
+    setStoryFlag("willow_joined", hasWillow);
+  }
+  partySystem.setJoined(hasElaine, player.position);
+  partySystem.setWillowJoined(hasWillow, player.position);
+  if (markMigrated) {
+    setJoinStateMigrationApplied(true);
+  }
+  return resolved;
 }
 
 function setElaineJoined(joined) {
@@ -6473,6 +6515,7 @@ function resolveStoryObjectiveState() {
     emberfallUnlocked: hasStoryEmberfallUnlocked(),
     willowMet: hasWillowMet(),
     willowJoined: hasWillowJoined(),
+    elaineJoined: hasElaineJoined(),
     chapter3RowanDebriefDone: hasChapter3RowanDebriefDone(),
     chapter4RowanReportDone: hasChapter4RowanReportDone(),
     harvesterSiteUnlocked: hasHarvesterSiteUnlocked(),
@@ -6609,6 +6652,7 @@ function tryTriggerRowanCouncilEvent({ force = false } = {}) {
     rowanCouncilDone: hasRowanCouncilDone(),
     emberfallLeadUnlocked: hasEmberfallLeadUnlocked(),
     willowJoined: hasWillowJoined(),
+    elaineJoined: hasElaineJoined(),
     harvesterChoiceResolved: getHarvesterChoice() !== HARVESTER_CHOICE_VALUES.NONE,
     force,
   });
@@ -12152,9 +12196,18 @@ function tryTriggerWillowMeetEvent({ force = false } = {}) {
     chapter2ArrivedEmberfall: hasChapter2ArrivedEmberfall(),
     willowMet: hasWillowMet(),
     willowJoined: hasWillowJoined(),
+    elaineJoined: hasElaineJoined(),
     inTriggerZone,
     force,
   });
+  if (outcome?.blocked) {
+    if (outcome.blockedToast) {
+      setTransientMessage(String(outcome.blockedToast), 1.7);
+    }
+    setCurrentObjectiveId(outcome.objectiveId ?? OBJECTIVE_IDS.RETURN_TO_ROWAN);
+    refreshQuestText();
+    return false;
+  }
   if (!outcome?.triggered) return false;
   return queueWillowMeet(outcome);
 }
@@ -17064,6 +17117,7 @@ function update(deltaSeconds) {
       partySystem.setActiveScene(currentSceneInfo.sceneId, player.position);
       partySystem.setJoined(hasElaineJoined(), player.position);
       partySystem.setWillowJoined(hasWillowJoined(), player.position);
+      applyJoinStateReconciliation();
       shrineSystem.setScene(currentSceneInfo.sceneId);
       vaelorisChoice = getVaelorisChoice();
       harvesterChoice = getHarvesterChoice();
@@ -19787,6 +19841,36 @@ if (DEV_MODE) {
     willowAutoStanceEnabled: willowStance.getAutoStanceEnabled(),
     willowCooldowns: { ...willowSpellCooldowns },
     partyMembers: partySystem.getState().members,
+  });
+  window.debug_reconcile_join_state_for_test = ({ storyFlags = {}, partyMembers = [] } = {}) => {
+    const resolved = reconcileJoinState(
+      {
+        ...saveState.getStoryFlags(),
+        ...(storyFlags && typeof storyFlags === "object" ? storyFlags : {}),
+      },
+      {
+        members: Array.isArray(partyMembers)
+          ? partyMembers.map((member) => String(member ?? "").trim().toLowerCase())
+          : [],
+      }
+    );
+    for (const [key, value] of Object.entries(resolved.storyFlags ?? {})) {
+      setStoryValue(key, value);
+    }
+    const members = resolved.partyState?.members ?? [];
+    setElaineJoined(members.includes("elaine"));
+    setWillowJoined(members.includes("willow"), { showToast: false });
+    return {
+      ...resolved,
+      joinState: window.debug_get_join_state?.(),
+    };
+  };
+  window.debug_get_join_state = () => ({
+    elaine_joined: hasElaineJoined(),
+    willow_joined: hasWillowJoined(),
+    partyMembers: partySystem
+      .getState()
+      .members.map((member) => String(member ?? "").trim().toLowerCase()),
   });
   window.debug_set_elaine_mp = (value) => {
     elaineMp = Math.max(0, Math.min(elaineMaxMp, Number(value) || 0));

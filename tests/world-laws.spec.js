@@ -753,6 +753,78 @@ test("intro dialogue persists and Elder Rowan uses alternate line after reload",
   expect(state.dialogue_line).toContain("You know what must be done.");
 });
 
+test("story flow ordering: Elaine must join before Willow and Rowan stays on early branch", async ({ page }) => {
+  await clearSaveAndRestart(page);
+  await enterGameplayFlow(page);
+
+  let joinState = await page.evaluate(() => window.debug_get_join_state?.());
+  expect(joinState.elaine_joined).toBe(false);
+  expect(joinState.willow_joined).toBe(false);
+
+  await openDialogueWithSpace(page);
+  await advance(page, 220);
+  let state = await getState(page);
+  expect(state.dialogue_line ?? "").not.toContain("You found Elaine");
+  await advanceDialogueToEnd(page, 24);
+
+  const earlyWillowAttempt = await page.evaluate(() => window.debug_trigger_willow_meet?.());
+  expect(earlyWillowAttempt?.triggered).toBe(false);
+  await advance(page, 120);
+  state = await getState(page);
+  expect(state.story_willow_joined).toBe(false);
+  expect(state.current_objective).toBe("return_to_rowan");
+
+  await page.evaluate(() => {
+    window.debug_set_story_flag?.("elaine_joined", true);
+  });
+  await advance(page, 120);
+  joinState = await page.evaluate(() => window.debug_get_join_state?.());
+  expect(joinState.elaine_joined).toBe(true);
+  expect(joinState.partyMembers).toContain("elaine");
+});
+
+test("join-state migration reconciliation corrects corrupted flag/party combinations", async ({ page }) => {
+  await clearSaveAndRestart(page);
+  await enterGameplayFlow(page);
+
+  const correctedEarly = await page.evaluate(() =>
+    window.debug_reconcile_join_state_for_test?.({
+      storyFlags: { elaine_joined: true, chapter2_started: false, emberfall_lead_unlocked: false },
+      partyMembers: [],
+    })
+  );
+  expect(correctedEarly.joinState.elaine_joined).toBe(false);
+  expect(correctedEarly.joinState.partyMembers).not.toContain("elaine");
+
+  const correctedLate = await page.evaluate(() =>
+    window.debug_reconcile_join_state_for_test?.({
+      storyFlags: { elaine_joined: true, chapter2_started: true },
+      partyMembers: [],
+    })
+  );
+  expect(correctedLate.joinState.elaine_joined).toBe(true);
+  expect(correctedLate.joinState.partyMembers).toContain("elaine");
+});
+
+test("UI gating: Elaine HUD and spellbar are hidden before join and enabled after join", async ({ page }) => {
+  await clearSaveAndRestart(page);
+  await enterGameplayFlow(page);
+
+  await page.evaluate(() => window.debug_force_mobile_ui?.(true));
+  await advance(page, 120);
+  let state = await getState(page);
+  expect(state.story_elaine_joined).toBe(false);
+  expect(state.elaine_spellbar_visible).toBe(false);
+  await expect(page.locator("[data-testid='hud-mp']")).toBeHidden();
+
+  await page.evaluate(() => window.debug_set_story_flag?.("elaine_joined", true));
+  await advance(page, 120);
+  state = await getState(page);
+  expect(state.story_elaine_joined).toBe(true);
+  expect(state.elaine_spellbar_visible).toBe(true);
+  await expect(page.locator("[data-testid='hud-mp']")).toBeVisible();
+});
+
 test("first join flow: opening completion and Rowan activates the vein quest", async ({ page }) => {
   await clearSaveAndRestart(page);
   await enterOpeningFlow(page);
