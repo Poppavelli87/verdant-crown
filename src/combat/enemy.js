@@ -447,6 +447,7 @@ export class Enemy {
     this.currentTargetId = "";
     this.targetLockRemaining = 0;
     this.lastHitBlocked = false;
+    this.lastDamagerId = "";
     this.knockbackVelocity = new THREE.Vector2(0, 0);
 
     this.patrolSpan = patrolSpan;
@@ -911,6 +912,7 @@ export class Enemy {
       isShielding: this.isShielding,
       debuffCooldown: Number(Math.max(0, this.specialCooldownRemaining).toFixed(3)),
       lastHitBlocked: Boolean(this.lastHitBlocked),
+      lastDamagerId: String(this.lastDamagerId ?? ""),
     };
   }
 }

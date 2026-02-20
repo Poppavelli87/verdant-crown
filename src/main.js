@@ -121,6 +121,7 @@ import {
   debugSpawnVeinNearPlayer,
   disposeThreatVeins,
   getThreatVeins,
+  hasActiveVein as hasActiveThreatVein,
   initThreatVeinsForScene,
   onVeinComplete,
   onVeinFail,
@@ -425,7 +426,8 @@ const WILLOW_GEM_PULSE_MIN = 0.16;
 const WILLOW_GEM_PULSE_MAX = 0.58;
 const WILLOW_BOLT_LIGHT_DAMAGE = 6;
 const WILLOW_BOLT_CHARGED_DAMAGE = 9;
-const ARTHUR_KILL_HEAL_RATIO = 0.1;
+const ARTHUR_KILL_HEAL_RATIO_DEFAULT = 0.1;
+const ARTHUR_KILL_HEAL_RATIO_ROOT_CHALLENGE = 0.5;
 const ARTHUR_RAGE_MAX_STACKS = 10;
 const ARTHUR_RAGE_DURATION_SECONDS = 10;
 const ARTHUR_OCCLUSION_FADE_MIN_OPACITY = 0.62;
@@ -3605,6 +3607,7 @@ const combatSystem = new CombatSystem({
   devMode: DEV_MODE,
 });
 combatSystem.setDamageResolver((payload) => resolveDamageWithStatus(payload));
+combatSystem.setOnEnemyKilled((killEvent) => handleEnemyKilled(killEvent));
 combatSystem.loadScene(currentSceneInfo.sceneId, sceneManager.getEnemySpawns());
 
 const pacingDirector = new PacingDirector();
@@ -4964,6 +4967,9 @@ let lastVeinFrame = {
   playerInsideActiveRadius: false,
 };
 let debugVeinSuppressionRemaining = 0;
+let debugRootChallengeActiveOverride = null;
+let arthurLastKillHealAmount = 0;
+let arthurLastKillHealWasRootChallenge = false;
 let lastPulseFrame = {
   active: false,
   elapsedSeconds: 0,
@@ -13859,6 +13865,13 @@ function healArthur(amount) {
   return Math.max(0, playerState.hp - before);
 }
 
+function isRootChallengeActive() {
+  if (typeof debugRootChallengeActiveOverride === "boolean") {
+    return debugRootChallengeActiveOverride;
+  }
+  return Boolean(lastVeinFrame.active || hasActiveThreatVein());
+}
+
 function getArthurRageState() {
   const effect = statusEffects.getEffect(STATUS_ENTITY_IDS.ARTHUR, STATUS_EFFECT_IDS.ARTHUR_RAGE);
   const stacks = Math.max(
@@ -13889,7 +13902,12 @@ function setArthurRageStacks(stacks, { refreshDurationSeconds = ARTHUR_RAGE_DURA
 }
 
 function triggerArthurKillPassive() {
-  const healed = healArthur(playerState.maxHP * ARTHUR_KILL_HEAL_RATIO);
+  const rootChallengeActive = isRootChallengeActive();
+  const healRatio = rootChallengeActive ? ARTHUR_KILL_HEAL_RATIO_ROOT_CHALLENGE : ARTHUR_KILL_HEAL_RATIO_DEFAULT;
+  const healAmount = Math.max(0, Math.round(playerState.maxHP * healRatio));
+  const healed = healArthur(healAmount);
+  arthurLastKillHealAmount = Number(healed.toFixed(3));
+  arthurLastKillHealWasRootChallenge = rootChallengeActive;
   const currentRage = getArthurRageState();
   const nextStacks = Math.min(ARTHUR_RAGE_MAX_STACKS, currentRage.stacks + 1);
   statusEffects.addEffect(STATUS_ENTITY_IDS.ARTHUR, {
@@ -13900,10 +13918,23 @@ function triggerArthurKillPassive() {
   });
   const nextRage = getArthurRageState();
   return {
-    healed: Number(healed.toFixed(3)),
+    healed: arthurLastKillHealAmount,
+    healAmount,
+    rootChallengeActive,
     stacks: nextRage.stacks,
     remainingMs: nextRage.remainingMs,
   };
+}
+
+function handleEnemyKilled(killEvent = null) {
+  const enemyId = String(killEvent?.enemyId ?? "");
+  const killerId = String(killEvent?.killerId ?? "");
+  if (enemyId) {
+    lastArthurTargetEnemyId = enemyId;
+  }
+  if (killerId === STATUS_ENTITY_IDS.ARTHUR) {
+    triggerArthurKillPassive();
+  }
 }
 
 function healElaine(amount) {
@@ -17961,12 +17992,10 @@ function update(deltaSeconds) {
     onPlayerDamaged,
     onPartyDamaged: onPlayerDamaged,
     onStatusApplied: onEnemyStatusApplied,
+    onEnemyKilled: handleEnemyKilled,
     onEnemyHit: (hit) => {
       if (hit?.targetId) {
         lastArthurTargetEnemyId = hit.targetId;
-      }
-      if (hit?.killed && String(hit.attackerId ?? "") === STATUS_ENTITY_IDS.ARTHUR) {
-        triggerArthurKillPassive();
       }
       if (hit?.targetId && hasElaineJoined() && !elaineDowned) {
         const boltDamage = partySystem.triggerHolyBolt(
@@ -18277,6 +18306,11 @@ window.render_game_to_text = () => {
     transition_active: sceneManager.isTransitioning(),
     player_health: Number(playerState.hp.toFixed(2)),
     player_max_health: playerState.maxHP,
+    arthur_hp: Number(playerState.hp.toFixed(2)),
+    arthur_max_hp: playerState.maxHP,
+    arthur_last_kill_heal_amount: Number(arthurLastKillHealAmount.toFixed(3)),
+    arthur_last_kill_heal_root_challenge: Boolean(arthurLastKillHealWasRootChallenge),
+    root_challenge_active: isRootChallengeActive(),
     tactics_mode: getTacticsMode(),
     guidance_line: guidanceLineText,
     current_objective: currentObjectiveState.id,
@@ -19030,6 +19064,38 @@ if (DEV_MODE) {
     return playerState.getSnapshot();
   };
   window.debug_get_hp = () => playerState.getSnapshot();
+  window.debug_set_arthur_hp = (value) => {
+    window.debug_set_hp?.(value);
+    return Number(playerState.hp.toFixed(3));
+  };
+  window.debug_get_arthur_hp = () => Number(playerState.hp.toFixed(3));
+  window.debug_get_arthur_max_hp = () => Number(playerState.maxHP.toFixed(3));
+  window.debug_spawn_1hp_enemy_near_arthur = (role = "skirmisher") => {
+    window.debug_set_active_character?.("arthur");
+    window.debug_set_enemy_attacks_enabled?.(false);
+    window.debug_set_combat_active?.(true);
+    const enemyId = window.debug_spawn_enemy_type?.(
+      String(role),
+      player.position.x + 1.02,
+      player.position.z + 0.02
+    );
+    if (!enemyId) return "";
+    combatSystem.setEnemyHealth(enemyId, 1);
+    lastArthurTargetEnemyId = enemyId;
+    return enemyId;
+  };
+  window.debug_force_root_challenge_active = (enabled = null) => {
+    if (enabled === null || enabled === undefined) {
+      debugRootChallengeActiveOverride = null;
+    } else {
+      debugRootChallengeActiveOverride = enabled !== false;
+    }
+    return {
+      forced: debugRootChallengeActiveOverride,
+      active: isRootChallengeActive(),
+    };
+  };
+  window.debug_is_root_challenge_active = () => isRootChallengeActive();
   window.debug_set_rage_stacks = (value = 0) => {
     return setArthurRageStacks(value);
   };
@@ -19077,9 +19143,6 @@ if (DEV_MODE) {
     );
     const state = combatSystem.getEnemyState(enemyId);
     const killConfirmed = state?.state === "dead";
-    if (killConfirmed) {
-      triggerArthurKillPassive();
-    }
     return {
       spawned: true,
       enemyId,

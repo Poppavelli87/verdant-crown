@@ -3526,3 +3526,36 @@ Added missing prop sprites used by Windward/Region4/Chapter flows:
 - Added Arthur rage/heal helper functions and kill hook wiring via combat hit callbacks.
 - Added HUD plumbing scaffold for `data-testid="arthur-rage"` and debug state fields for rage/occlusion assertions.
 - Next: run deterministic Playwright tests for rage stack/timer/damage/expiry and occlusion snapshot, then finalize commit.
+
+## 2026-02-19 - Arthur on-kill heal reliability + root challenge scaling
+
+- Root cause identified: enemy death finalization happened across multiple code paths while Arthur heal trigger was only wired to one hit callback path.
+- Added canonical kill event utility: `src/combat/onEnemyKilled.js`.
+- Combat kill attribution reliability:
+  - Enemy now tracks `lastDamagerId` in `src/combat/enemy.js`.
+  - CombatSystem now records damage source on every damage application and routes all kill finalization through `_finalizeEnemyDeath(...)` in `src/combat/combatSystem.js`.
+  - Unified death paths for melee hit, support damage, debug health kill, and defeat-all to use the same kill finalizer.
+- Arthur passive heal updated in `src/main.js`:
+  - Outside root challenge: 10% max HP.
+  - During root challenge: 50% max HP.
+  - Heal amount uses rounded max-HP fraction and clamps to max HP via existing HP setter.
+  - Arthur-only trigger via centralized kill event (`killerId === "arthur"`).
+- Root challenge state support:
+  - Added `hasActiveVein()` export in `src/world/threatVeins.js`.
+  - Main runtime helper `isRootChallengeActive()` uses active vein state with optional debug override.
+- Added debug hooks in `src/main.js`:
+  - `debug_set_arthur_hp`, `debug_get_arthur_hp`, `debug_get_arthur_max_hp`
+  - `debug_spawn_1hp_enemy_near_arthur`
+  - `debug_force_root_challenge_active`, `debug_is_root_challenge_active`
+- Added render/text debug fields in `render_game_to_text`:
+  - `arthur_hp`, `arthur_max_hp`
+  - `arthur_last_kill_heal_amount`
+  - `arthur_last_kill_heal_root_challenge`
+  - `root_challenge_active`
+- Playwright coverage updates in `tests/world-laws.spec.js`:
+  - Added deterministic tests for 10% heal outside root challenge.
+  - Added deterministic tests for 50% heal inside root challenge.
+  - Added deterministic clamp-to-max test.
+- Validation:
+  - `npx playwright test tests/world-laws.spec.js --grep "Arthur rage passive and occlusion fade"` -> 8 passed.
+  - `npx playwright test tests/world-laws.spec.js` -> 134 passed.

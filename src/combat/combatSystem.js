@@ -1,6 +1,7 @@
 import * as THREE from "https://unpkg.com/three@0.160.0/build/three.module.js";
 import { DamageSystem, ENEMY_STAGGER_SECONDS } from "./damageSystem.js";
 import { ENEMY_STATES, Enemy } from "./enemy.js";
+import { onEnemyKilled as buildEnemyKilledEvent } from "./onEnemyKilled.js";
 import { STATUS_EFFECT_IDS } from "./statusEffects.js";
 
 const COMBAT_LINGER_SECONDS = 2.5;
@@ -33,7 +34,13 @@ function disposeObject3D(object3D) {
 
 // CombatSystem owns scene-local enemies, combat flow state, and loot orb lifecycle.
 export class CombatSystem {
-  constructor({ threeScene, damageSystem = new DamageSystem(), devMode = false, damageResolver = null }) {
+  constructor({
+    threeScene,
+    damageSystem = new DamageSystem(),
+    devMode = false,
+    damageResolver = null,
+    onEnemyKilled = null,
+  }) {
     this.threeScene = threeScene;
     this.damageSystem = damageSystem;
     this.devMode = devMode;
@@ -53,6 +60,7 @@ export class CombatSystem {
     this.combatActive = false;
     this.enemyAttacksEnabled = true;
     this.damageResolver = typeof damageResolver === "function" ? damageResolver : null;
+    this.onEnemyKilled = typeof onEnemyKilled === "function" ? onEnemyKilled : null;
 
     this.lootCollected = 0;
     this.totalEnemiesDefeated = 0;
@@ -60,6 +68,10 @@ export class CombatSystem {
 
   setDamageResolver(resolver) {
     this.damageResolver = typeof resolver === "function" ? resolver : null;
+  }
+
+  setOnEnemyKilled(callback) {
+    this.onEnemyKilled = typeof callback === "function" ? callback : null;
   }
 
   _resolveDamageAmount({
@@ -88,6 +100,33 @@ export class CombatSystem {
         target,
       }) ?? numericBase;
     return Math.max(0, Number(resolved) || 0);
+  }
+
+  _recordLastDamager(enemy, attackerId = "") {
+    if (!enemy) return;
+    const resolvedAttackerId = String(attackerId ?? "").trim();
+    if (!resolvedAttackerId) return;
+    enemy.lastDamagerId = resolvedAttackerId;
+  }
+
+  _finalizeEnemyDeath(enemy, { source = "combat", attackType = "", damageType = "", onEnemyKilled = null } = {}) {
+    if (!enemy || enemy.state === ENEMY_STATES.DEAD) return null;
+    enemy.markDead();
+    this.totalEnemiesDefeated += 1;
+    this._spawnLootOrb(enemy.position);
+
+    const killEvent = buildEnemyKilledEvent(enemy.lastDamagerId, enemy.id, {
+      source,
+      attackType,
+      damageType,
+      enemyRole: enemy.role,
+      enemyType: enemy.type,
+      sceneId: this.currentSceneId,
+      elapsedSeconds: this.elapsedSeconds,
+    });
+    const callback = typeof onEnemyKilled === "function" ? onEnemyKilled : this.onEnemyKilled;
+    callback?.(killEvent);
+    return killEvent;
   }
 
   _normalizeThreatTargets(playerPosition, threatTargets = null) {
@@ -869,7 +908,7 @@ export class CombatSystem {
     return best;
   }
 
-  _applyAttackEvent(playerPosition, attackEvent, onEnemyHit) {
+  _applyAttackEvent(playerPosition, attackEvent, onEnemyHit, onEnemyKilled = null) {
     const target = this._selectEnemyForAttack(playerPosition, attackEvent);
     if (!target) return 0;
     const resolvedAttackerId = String(attackEvent.attackerId ?? "arthur");
@@ -910,7 +949,8 @@ export class CombatSystem {
       damageAmount *= target.bulwarkShieldDamageScale ?? 0.5;
     }
 
-    const dealt = this.damageSystem.applyDamageToEnemy(target, damageAmount);
+    this._recordLastDamager(target, resolvedAttackerId);
+    const dealt = this.damageSystem.applyDamageToEnemy(target, Math.max(0, damageAmount));
 
     if (dealt > 0) {
       const hitDirection = new THREE.Vector2(target.position.x - attackOrigin.x, target.position.y - attackOrigin.z);
@@ -926,14 +966,18 @@ export class CombatSystem {
       if (shouldStagger) {
         target.staggerRemaining = Math.max(target.staggerRemaining, staggerDuration);
       }
-      const killed = target.health <= 0 && target.state !== ENEMY_STATES.DEAD;
-      if (killed) {
-        target.markDead();
-        this.totalEnemiesDefeated += 1;
-        this._spawnLootOrb(target.position);
-      }
+      const killEvent =
+        target.health <= 0
+          ? this._finalizeEnemyDeath(target, {
+              source: "player_attack",
+              attackType: attackEvent.type ?? "light",
+              damageType: attackEvent.damageType ?? "physical",
+              onEnemyKilled,
+            })
+          : null;
+      const killed = Boolean(killEvent);
       onEnemyHit?.({
-        attackerId: resolvedAttackerId,
+        attackerId: killEvent?.killerId || resolvedAttackerId,
         type: attackEvent.type,
         chargeRatio: attackEvent.chargeRatio ?? 0,
         direction: hitDirection,
@@ -974,6 +1018,7 @@ export class CombatSystem {
     target.lastHitBlocked = frontBlocked;
     const finalDamage = frontBlocked ? resolvedDamage * (target.bulwarkShieldDamageScale ?? 0.5) : resolvedDamage;
 
+    this._recordLastDamager(target, options.attackerId ?? "support");
     const dealt = this.damageSystem.applyDamageToEnemy(target, finalDamage);
     if (dealt <= 0) return 0;
 
@@ -993,10 +1038,13 @@ export class CombatSystem {
       target.staggerRemaining = Math.max(target.staggerRemaining, Number(options.staggerSeconds));
     }
 
-    if (target.health <= 0 && target.state !== ENEMY_STATES.DEAD) {
-      target.markDead();
-      this.totalEnemiesDefeated += 1;
-      this._spawnLootOrb(target.position);
+    if (target.health <= 0) {
+      this._finalizeEnemyDeath(target, {
+        source: options.source ?? "support",
+        attackType: options.attackType ?? "support",
+        damageType: options.damageType ?? "magic",
+        onEnemyKilled: options.onEnemyKilled,
+      });
     }
     return dealt;
   }
@@ -1032,6 +1080,7 @@ export class CombatSystem {
       onPartyDamaged,
       onStatusApplied,
       onEnemyHit,
+      onEnemyKilled,
     }
   ) {
     this.elapsedSeconds += dtSeconds;
@@ -1042,8 +1091,9 @@ export class CombatSystem {
         : (amount, sourceEnemy, targetId) => onPlayerDamaged?.(amount, sourceEnemy, targetId);
 
     let damageDealtThisFrame = 0;
+    const killCallback = typeof onEnemyKilled === "function" ? onEnemyKilled : this.onEnemyKilled;
     for (const attackEvent of attackEvents) {
-      damageDealtThisFrame += this._applyAttackEvent(playerPosition, attackEvent, onEnemyHit);
+      damageDealtThisFrame += this._applyAttackEvent(playerPosition, attackEvent, onEnemyHit, killCallback);
     }
 
     let anyAggro = false;
@@ -1174,14 +1224,17 @@ export class CombatSystem {
     const max = Math.max(1, Number(enemy.maxHealth) || 1);
     const next = Math.max(0, Math.min(max, Number(value) || 0));
     enemy.health = next;
-    if (enemy.health <= 0 && enemy.state !== ENEMY_STATES.DEAD) {
-      enemy.markDead();
-      this.totalEnemiesDefeated += 1;
-      this._spawnLootOrb(enemy.position);
+    if (enemy.health <= 0) {
+      this._finalizeEnemyDeath(enemy, {
+        source: "debug_set_health",
+        attackType: "set_health",
+        damageType: "debug",
+      });
     }
     if (enemy.health > 0 && enemy.state === ENEMY_STATES.DEAD) {
       enemy.deadFade = 1;
       enemy.deadRemoved = false;
+      enemy.lastDamagerId = "";
       enemy.setState(ENEMY_STATES.IDLE);
       if (enemy.group && !enemy.group.parent) {
         this.root.add(enemy.group);
@@ -1225,9 +1278,11 @@ export class CombatSystem {
     for (const enemy of this.enemies) {
       if (!enemy.isAlive()) continue;
       enemy.health = 0;
-      enemy.markDead();
-      this.totalEnemiesDefeated += 1;
-      this._spawnLootOrb(enemy.position);
+      this._finalizeEnemyDeath(enemy, {
+        source: "debug_force_defeat",
+        attackType: "defeat_all",
+        damageType: "debug",
+      });
     }
   }
 

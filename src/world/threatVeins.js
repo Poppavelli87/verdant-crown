@@ -897,6 +897,10 @@ export function onVeinComplete(veinId) {
   return markVeinCompleted(vein, runtime.lastContext ?? {});
 }
 
+export function hasActiveVein() {
+  return runtime.veins.some((vein) => vein.state === VEIN_STATES.ACTIVE);
+}
+
 export function updateThreatVeins(dtSeconds, playerPos, context) {
   const dt = Math.max(0, dtSeconds);
   if (!runtime.root || !context || context.sceneId !== runtime.sceneId) {

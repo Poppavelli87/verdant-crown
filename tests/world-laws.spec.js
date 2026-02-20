@@ -491,6 +491,7 @@ async function setupArthurRageScenario(page, { sceneId = "hollowScar", showParty
       window.debug_set_combat_active?.(true);
       window.debug_defeat_all_enemies?.();
       window.debug_set_occlusion_fade_enabled?.(true);
+      window.debug_force_root_challenge_active?.(null);
       window.debug_set_rage_stacks?.(0);
       if (withPartyHud) {
         window.debug_set_story_flag?.("elaine_joined", true);
@@ -4694,9 +4695,71 @@ test.describe("status effects", () => {
 });
 
 test.describe("Arthur rage passive and occlusion fade", () => {
+  test("Arthur kill heal applies 10% max HP outside root challenge", async ({ page }) => {
+    await setupArthurRageScenario(page, { sceneId: "hollowScar", showPartyHud: false });
+    await page.evaluate(() => {
+      window.debug_force_root_challenge_active?.(false);
+      window.debug_set_arthur_hp?.(20);
+      window.debug_set_rage_stacks?.(0);
+    });
+    await advance(page, 80);
+
+    await forceArthurKillNearPlayer(page, { role: "skirmisher" });
+    await advance(page, 120);
+
+    const hp = await page.evaluate(() => window.debug_get_arthur_hp?.());
+    const maxHp = await page.evaluate(() => window.debug_get_arthur_max_hp?.());
+    const state = await getState(page);
+    expect(hp).toBe(30);
+    expect(maxHp).toBe(100);
+    expect(state.root_challenge_active).toBe(false);
+    expect(state.arthur_last_kill_heal_amount).toBe(10);
+    expect(state.arthur_last_kill_heal_root_challenge).toBe(false);
+  });
+
+  test("Arthur kill heal applies 50% max HP during root challenge", async ({ page }) => {
+    await setupArthurRageScenario(page, { sceneId: "hollowScar", showPartyHud: false });
+    await page.evaluate(() => {
+      window.debug_force_root_challenge_active?.(true);
+      window.debug_set_arthur_hp?.(20);
+      window.debug_set_rage_stacks?.(0);
+    });
+    await advance(page, 80);
+
+    await forceArthurKillNearPlayer(page, { role: "skirmisher" });
+    await advance(page, 120);
+
+    const hp = await page.evaluate(() => window.debug_get_arthur_hp?.());
+    const state = await getState(page);
+    expect(hp).toBe(70);
+    expect(state.root_challenge_active).toBe(true);
+    expect(state.arthur_last_kill_heal_amount).toBe(50);
+    expect(state.arthur_last_kill_heal_root_challenge).toBe(true);
+  });
+
+  test("Arthur kill heal clamps to max HP during root challenge", async ({ page }) => {
+    await setupArthurRageScenario(page, { sceneId: "hollowScar", showPartyHud: false });
+    await page.evaluate(() => {
+      window.debug_force_root_challenge_active?.(true);
+      window.debug_set_arthur_hp?.(80);
+      window.debug_set_rage_stacks?.(0);
+    });
+    await advance(page, 80);
+
+    await forceArthurKillNearPlayer(page, { role: "skirmisher" });
+    await advance(page, 120);
+
+    const hp = await page.evaluate(() => window.debug_get_arthur_hp?.());
+    const state = await getState(page);
+    expect(hp).toBe(100);
+    expect(state.arthur_last_kill_heal_amount).toBe(20);
+    expect(state.arthur_last_kill_heal_root_challenge).toBe(true);
+  });
+
   test("Arthur kill passive heals 10% max HP and grants Rage x1 for 10 seconds", async ({ page }) => {
     await setupArthurRageScenario(page, { sceneId: "hollowScar", showPartyHud: true });
     await page.evaluate(() => {
+      window.debug_force_root_challenge_active?.(false);
       window.debug_set_hp?.(40);
       window.debug_set_rage_stacks?.(0);
     });
