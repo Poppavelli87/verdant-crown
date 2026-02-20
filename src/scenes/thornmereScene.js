@@ -12,7 +12,9 @@ const ELDER_ROWAN_INTRO_REST = Object.freeze([
   "Steady it. Or it will spread.",
 ]);
 
-const ELDER_ROWAN_REPEAT_SCRIPT = Object.freeze(["You know what must be done."]);
+const ELDER_ROWAN_EARLY_SCRIPT = Object.freeze(["You know what must be done."]);
+const ELDER_ROWAN_ELAINE_SCRIPT = Object.freeze(["You found Elaine. Good. Keep your steps steady."]);
+const ELDER_ROWAN_WILLOW_SCRIPT = Object.freeze(["With Willow beside you, reports come faster than rumors."]);
 const ELDER_ROWAN_FALLOUT_SCRIPT = Object.freeze([
   "The Harvester didn't just dig. It listened.",
   "A ridge path opens when the roots agree.",
@@ -113,6 +115,9 @@ export class ThornmereScene extends BaseScene {
     );
     this._elaineJoined = Boolean(
       this.saveState?.getStoryFlag?.("elaine_joined") ?? this.saveState?.getFlag?.("story.elaine_joined")
+    );
+    this._willowJoined = Boolean(
+      this.saveState?.getStoryFlag?.("willow_joined") ?? this.saveState?.getFlag?.("story.willow_joined")
     );
     this._act2FalloutDone = Boolean(
       this.saveState?.getStoryFlag?.("act2_fallout_done") ?? this.saveState?.getFlag?.("story.act2_fallout_done")
@@ -377,7 +382,9 @@ export class ThornmereScene extends BaseScene {
       dialogueScript: ({ saveState }) => {
         if (this._act2FalloutDone) return ELDER_ROWAN_FALLOUT_SCRIPT;
         if (this._rowanCouncilDone) return ELDER_ROWAN_COUNCIL_SCRIPT;
-        if (this._introSpoken) return ELDER_ROWAN_REPEAT_SCRIPT;
+        if (this._willowJoined) return ELDER_ROWAN_WILLOW_SCRIPT;
+        if (this._elaineJoined) return ELDER_ROWAN_ELAINE_SCRIPT;
+        if (this._introSpoken) return ELDER_ROWAN_EARLY_SCRIPT;
         const prologueSeen = Boolean(
           saveState?.getStoryFlag?.("prologue_seen") ?? saveState?.getFlag?.("story.prologue_seen")
         );
@@ -511,6 +518,8 @@ export class ThornmereScene extends BaseScene {
       this._veinQuestComplete = Boolean(value);
     } else if (flagKey === "story.act2_fallout_done" || flagKey === "act2_fallout_done") {
       this._act2FalloutDone = Boolean(value);
+    } else if (flagKey === "story.willow_joined" || flagKey === "willow_joined") {
+      this._willowJoined = Boolean(value);
     } else if (flagKey === "story.rowan_council_done" || flagKey === "rowan_council_done") {
       this._rowanCouncilDone = Boolean(value);
     } else if (flagKey === "story.emberfall_lead_unlocked" || flagKey === "emberfall_lead_unlocked") {

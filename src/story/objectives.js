@@ -914,6 +914,7 @@ export function resolveCurrentObjective(context = {}) {
   const chapter2ArrivedEmberfall = Boolean(context.chapter2ArrivedEmberfall);
   const willowMet = Boolean(context.willowMet);
   const willowJoined = Boolean(context.willowJoined);
+  const elaineJoined = Boolean(context.elaineJoined);
   const chapter3RowanDebriefDone = Boolean(context.chapter3RowanDebriefDone);
   const listeningSpikeLeadUnlocked = Boolean(context.listeningSpikeLeadUnlocked);
   const listeningSpikeSiteCleared = Boolean(context.listeningSpikeSiteCleared);
@@ -976,6 +977,8 @@ export function resolveCurrentObjective(context = {}) {
   } else if (region4SeedEntered) {
     id = OBJECTIVE_IDS.RETURN_TO_ROWAN_OR_PRESS_ON;
   } else if (!harvesterChoiceResolved && inThornmere && Boolean(context.milestoneMet) && !Boolean(context.rowanCouncilDone)) {
+    id = OBJECTIVE_IDS.RETURN_TO_ROWAN;
+  } else if (!elaineJoined && !harvesterChoiceResolved) {
     id = OBJECTIVE_IDS.RETURN_TO_ROWAN;
   } else if (!harvesterChoiceResolved && chapter2Started && !chapter2ArrivedEmberfall) {
     id = OBJECTIVE_IDS.TRAVEL_TO_EMBERFALL;

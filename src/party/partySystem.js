@@ -464,6 +464,14 @@ export class PartySystem {
     this._syncPresence(playerPosition);
   }
 
+  hasMember(memberId = "") {
+    const normalized = String(memberId ?? "").trim().toLowerCase();
+    if (normalized === "arthur") return true;
+    if (normalized === "elaine") return this.elaineJoined;
+    if (normalized === "willow") return this.willowJoined;
+    return false;
+  }
+
   setActiveCharacter(characterId = "arthur", playerPosition = null) {
     const normalized = String(characterId).toLowerCase();
     if (normalized === "elaine") {
