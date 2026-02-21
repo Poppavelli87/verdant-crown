@@ -1,6 +1,35 @@
-const SAVE_VERSION = 1;
+const SAVE_VERSION = 2;
+const SLOT_SCHEMA_VERSION = 1;
+const SLOT_COUNT = 5;
 const STORAGE_KEY = "verdant-crown-save-v1";
 const LEGACY_STORAGE_KEY = "threejs-rpg-save-v1";
+const SLOT_METADATA_KEY = "verdantCrown.saveSlots";
+const SLOT_ACTIVE_KEY = "verdantCrown.activeSlot";
+const SLOT_MIGRATED_KEY = "verdantCrown.slotMigrationDone";
+
+function getSlotStorageKey(slotIndex) {
+  return `verdantCrown.saveSlot.${slotIndex}`;
+}
+
+function getDefaultSlotName(slotIndex) {
+  return `Save ${slotIndex}`;
+}
+
+function createDefaultSlotMeta(slotIndex) {
+  return {
+    slot: slotIndex,
+    name: getDefaultSlotName(slotIndex),
+    occupied: false,
+    timestamp: null,
+    sceneId: "",
+    objectiveId: "",
+    schemaVersion: SLOT_SCHEMA_VERSION,
+  };
+}
+
+function createDefaultSlotList() {
+  return Array.from({ length: SLOT_COUNT }, (_, index) => createDefaultSlotMeta(index + 1));
+}
 
 function createDefaultData() {
   return {
@@ -40,81 +69,119 @@ function shouldSkipPersist() {
   return typeof window !== "undefined" && Boolean(window.__verdant_skip_save_on_unload);
 }
 
-// SaveState wraps localStorage with a versioned schema for scene/session persistence.
+function normalizeData(parsed) {
+  const data = {
+    ...createDefaultData(),
+    ...(parsed ?? {}),
+    version: SAVE_VERSION,
+    playerPositions: parsed?.playerPositions ?? {},
+    safeSpots: parsed?.safeSpots ?? {},
+    crownMoodScore: Math.max(-100, Math.min(100, Number(parsed?.crownMoodScore) || 0)),
+    playerUpgrades: {
+      ...createDefaultData().playerUpgrades,
+      ...(parsed?.playerUpgrades ?? {}),
+    },
+    willowState: {
+      ...createDefaultData().willowState,
+      ...(parsed?.willowState ?? {}),
+    },
+    banterState: {
+      ...createDefaultData().banterState,
+      ...(parsed?.banterState ?? {}),
+    },
+    relicShards: Math.max(0, Number(parsed?.relicShards) || 0),
+    flags: parsed?.flags ?? {},
+    storyFlags: parsed?.storyFlags ?? {},
+  };
+
+  const stance = String(data.willowState.activeStance ?? "ruby").toLowerCase();
+  data.willowState.activeStance = stance === "emerald" || stance === "sapphire" || stance === "ruby" ? stance : "ruby";
+  data.willowState.autoStanceEnabled = data.willowState.autoStanceEnabled !== false;
+  const banterFrequency = String(data.banterState.frequency ?? "high").toLowerCase();
+  data.banterState.frequency =
+    banterFrequency === "low" || banterFrequency === "normal" || banterFrequency === "high" ? banterFrequency : "high";
+  data.banterState.completedTopics = Array.isArray(data.banterState.completedTopics)
+    ? data.banterState.completedTopics
+        .map((entry) => String(entry ?? "").trim().toLowerCase())
+        .filter((entry) => entry.length > 0)
+    : [];
+  data.banterState.topicCursor = Math.max(0, Math.floor(Number(data.banterState.topicCursor) || 0));
+  data.banterState.guidanceCursorByCategory =
+    data.banterState.guidanceCursorByCategory && typeof data.banterState.guidanceCursorByCategory === "object"
+      ? data.banterState.guidanceCursorByCategory
+      : {};
+  data.banterState.quipCursorBySpeaker =
+    data.banterState.quipCursorBySpeaker && typeof data.banterState.quipCursorBySpeaker === "object"
+      ? data.banterState.quipCursorBySpeaker
+      : {};
+
+  if (typeof data.flags["story.intro_spoken"] === "boolean" && data.storyFlags.intro_spoken === undefined) {
+    data.storyFlags.intro_spoken = data.flags["story.intro_spoken"];
+  }
+  return data;
+}
+
+function parseSlotIndex(slotIndex) {
+  const next = Math.max(1, Math.min(SLOT_COUNT, Math.floor(Number(slotIndex) || 1)));
+  return next;
+}
+
+function normalizeSlotMetaList(rawList) {
+  const defaults = createDefaultSlotList();
+  if (!Array.isArray(rawList)) return defaults;
+  return defaults.map((entry, index) => {
+    const source = rawList[index] && typeof rawList[index] === "object" ? rawList[index] : {};
+    return {
+      ...entry,
+      name: String(source.name ?? entry.name).slice(0, 32),
+      occupied: Boolean(source.occupied),
+      timestamp: source.timestamp ? String(source.timestamp) : null,
+      sceneId: String(source.sceneId ?? ""),
+      objectiveId: String(source.objectiveId ?? ""),
+      schemaVersion: SLOT_SCHEMA_VERSION,
+    };
+  });
+}
+
 export class SaveState {
   constructor(storage = window.localStorage) {
     this.storage = storage;
     this.data = createDefaultData();
     this.hasPersistedData = false;
+    this.slotMeta = createDefaultSlotList();
+    this.activeSlot = 1;
     this.load();
   }
 
   load() {
+    this.slotMeta = this.readSlotMeta();
+    this.activeSlot = this.readActiveSlot();
+    this.migrateLegacySaveIfNeeded();
+    this.loadActiveSlotData();
+  }
+
+  loadActiveSlotData() {
+    const slotData = this.readSlotData(this.activeSlot);
+    if (slotData) {
+      this.data = normalizeData(slotData);
+      this.hasPersistedData = true;
+      return;
+    }
+
+    const raw = this.storage.getItem(STORAGE_KEY) ?? this.storage.getItem(LEGACY_STORAGE_KEY);
+    if (!raw) {
+      this.data = createDefaultData();
+      this.hasPersistedData = false;
+      return;
+    }
     try {
-      const raw = this.storage.getItem(STORAGE_KEY) ?? this.storage.getItem(LEGACY_STORAGE_KEY);
-      if (!raw) {
-        this.data = createDefaultData();
-        this.hasPersistedData = false;
-        return;
-      }
-
       const parsed = JSON.parse(raw);
-      if (!parsed || parsed.version !== SAVE_VERSION) {
+      if (!parsed || (parsed.version !== 1 && parsed.version !== SAVE_VERSION)) {
         this.data = createDefaultData();
         this.hasPersistedData = false;
         return;
       }
-
-      this.data = {
-        ...createDefaultData(),
-        ...parsed,
-        playerPositions: parsed.playerPositions ?? {},
-        safeSpots: parsed.safeSpots ?? {},
-        crownMoodScore: Math.max(-100, Math.min(100, Number(parsed.crownMoodScore) || 0)),
-        playerUpgrades: {
-          ...createDefaultData().playerUpgrades,
-          ...(parsed.playerUpgrades ?? {}),
-        },
-        willowState: {
-          ...createDefaultData().willowState,
-          ...(parsed.willowState ?? {}),
-        },
-        banterState: {
-          ...createDefaultData().banterState,
-          ...(parsed.banterState ?? {}),
-        },
-        relicShards: Math.max(0, Number(parsed.relicShards) || 0),
-        flags: parsed.flags ?? {},
-        storyFlags: parsed.storyFlags ?? {},
-      };
-
-      const stance = String(this.data.willowState.activeStance ?? "ruby").toLowerCase();
-      this.data.willowState.activeStance =
-        stance === "emerald" || stance === "sapphire" || stance === "ruby" ? stance : "ruby";
-      this.data.willowState.autoStanceEnabled = this.data.willowState.autoStanceEnabled !== false;
-      const banterFrequency = String(this.data.banterState.frequency ?? "high").toLowerCase();
-      this.data.banterState.frequency =
-        banterFrequency === "low" || banterFrequency === "normal" || banterFrequency === "high"
-          ? banterFrequency
-          : "high";
-      this.data.banterState.completedTopics = Array.isArray(this.data.banterState.completedTopics)
-        ? this.data.banterState.completedTopics
-            .map((entry) => String(entry ?? "").trim().toLowerCase())
-            .filter((entry) => entry.length > 0)
-        : [];
-      this.data.banterState.topicCursor = Math.max(0, Math.floor(Number(this.data.banterState.topicCursor) || 0));
-      this.data.banterState.guidanceCursorByCategory =
-        this.data.banterState.guidanceCursorByCategory && typeof this.data.banterState.guidanceCursorByCategory === "object"
-          ? this.data.banterState.guidanceCursorByCategory
-          : {};
-      this.data.banterState.quipCursorBySpeaker =
-        this.data.banterState.quipCursorBySpeaker && typeof this.data.banterState.quipCursorBySpeaker === "object"
-          ? this.data.banterState.quipCursorBySpeaker
-          : {};
-
-      if (typeof this.data.flags["story.intro_spoken"] === "boolean" && this.data.storyFlags.intro_spoken === undefined) {
-        this.data.storyFlags.intro_spoken = this.data.flags["story.intro_spoken"];
-      }
+      this.data = normalizeData(parsed);
       this.hasPersistedData = true;
     } catch {
       this.data = createDefaultData();
@@ -122,12 +189,166 @@ export class SaveState {
     }
   }
 
+  readSlotMeta() {
+    try {
+      const raw = this.storage.getItem(SLOT_METADATA_KEY);
+      if (!raw) return createDefaultSlotList();
+      const parsed = JSON.parse(raw);
+      if (!parsed || parsed.schemaVersion !== SLOT_SCHEMA_VERSION) {
+        return createDefaultSlotList();
+      }
+      return normalizeSlotMetaList(parsed.slots);
+    } catch {
+      return createDefaultSlotList();
+    }
+  }
+
+  persistSlotMeta() {
+    this.storage.setItem(
+      SLOT_METADATA_KEY,
+      JSON.stringify({
+        schemaVersion: SLOT_SCHEMA_VERSION,
+        slots: this.slotMeta,
+      })
+    );
+  }
+
+  readActiveSlot() {
+    return parseSlotIndex(this.storage.getItem(SLOT_ACTIVE_KEY));
+  }
+
+  setActiveSlot(slotIndex) {
+    this.activeSlot = parseSlotIndex(slotIndex);
+    this.storage.setItem(SLOT_ACTIVE_KEY, String(this.activeSlot));
+    return this.activeSlot;
+  }
+
+  readSlotData(slotIndex) {
+    try {
+      const raw = this.storage.getItem(getSlotStorageKey(parseSlotIndex(slotIndex)));
+      if (!raw) return null;
+      const parsed = JSON.parse(raw);
+      if (!parsed || (parsed.version !== 1 && parsed.version !== SAVE_VERSION)) return null;
+      return parsed;
+    } catch {
+      return null;
+    }
+  }
+
+  writeSlotData(slotIndex, data = this.data) {
+    const resolvedSlot = parseSlotIndex(slotIndex);
+    const normalized = normalizeData(data);
+    this.storage.setItem(getSlotStorageKey(resolvedSlot), JSON.stringify(normalized));
+    const storyFlags = normalized.storyFlags ?? {};
+    const objective = storyFlags.current_objective ?? normalized.flags?.["story.current_objective"] ?? "";
+    this.slotMeta[resolvedSlot - 1] = {
+      ...this.slotMeta[resolvedSlot - 1],
+      occupied: true,
+      timestamp: new Date().toISOString(),
+      sceneId: String(normalized.lastSceneId ?? ""),
+      objectiveId: String(objective ?? ""),
+      schemaVersion: SLOT_SCHEMA_VERSION,
+    };
+    this.persistSlotMeta();
+    this.storage.setItem(STORAGE_KEY, JSON.stringify(normalized));
+    this.hasPersistedData = true;
+    return normalized;
+  }
+
+  hasAnySlotData() {
+    return this.slotMeta.some((slot) => slot.occupied) || Array.from({ length: SLOT_COUNT }).some((_, index) => {
+      const raw = this.storage.getItem(getSlotStorageKey(index + 1));
+      return Boolean(raw);
+    });
+  }
+
+  migrateLegacySaveIfNeeded() {
+    if (this.storage.getItem(SLOT_MIGRATED_KEY) === "1") return;
+    if (this.hasAnySlotData()) {
+      this.storage.setItem(SLOT_MIGRATED_KEY, "1");
+      return;
+    }
+    const raw = this.storage.getItem(STORAGE_KEY) ?? this.storage.getItem(LEGACY_STORAGE_KEY);
+    if (!raw) {
+      this.storage.setItem(SLOT_MIGRATED_KEY, "1");
+      this.persistSlotMeta();
+      return;
+    }
+    try {
+      const parsed = JSON.parse(raw);
+      if (!parsed || (parsed.version !== 1 && parsed.version !== SAVE_VERSION)) {
+        this.storage.setItem(SLOT_MIGRATED_KEY, "1");
+        this.persistSlotMeta();
+        return;
+      }
+      this.writeSlotData(1, parsed);
+      this.storage.setItem(SLOT_MIGRATED_KEY, "1");
+    } catch {
+      this.storage.setItem(SLOT_MIGRATED_KEY, "1");
+    }
+  }
+
+  getSlotSummaries() {
+    return this.slotMeta.map((slot) => ({ ...slot }));
+  }
+
+  renameSlot(slotIndex, name) {
+    const resolvedSlot = parseSlotIndex(slotIndex);
+    const current = this.slotMeta[resolvedSlot - 1];
+    this.slotMeta[resolvedSlot - 1] = {
+      ...current,
+      name: String(name ?? "").trim().slice(0, 32) || getDefaultSlotName(resolvedSlot),
+    };
+    this.persistSlotMeta();
+    return { ...this.slotMeta[resolvedSlot - 1] };
+  }
+
+  saveToSlot(slotIndex, data = this.data) {
+    const resolvedSlot = parseSlotIndex(slotIndex);
+    const payload = this.writeSlotData(resolvedSlot, data);
+    if (resolvedSlot === this.activeSlot) {
+      this.data = payload;
+    }
+    return { ...this.slotMeta[resolvedSlot - 1] };
+  }
+
+  loadFromSlot(slotIndex) {
+    const resolvedSlot = parseSlotIndex(slotIndex);
+    const data = this.readSlotData(resolvedSlot);
+    if (!data) return false;
+    this.setActiveSlot(resolvedSlot);
+    this.data = normalizeData(data);
+    this.hasPersistedData = true;
+    this.storage.setItem(STORAGE_KEY, JSON.stringify(this.data));
+    return true;
+  }
+
+  deleteSlot(slotIndex) {
+    const resolvedSlot = parseSlotIndex(slotIndex);
+    this.storage.removeItem(getSlotStorageKey(resolvedSlot));
+    const current = this.slotMeta[resolvedSlot - 1];
+    this.slotMeta[resolvedSlot - 1] = {
+      ...current,
+      occupied: false,
+      timestamp: null,
+      sceneId: "",
+      objectiveId: "",
+      schemaVersion: SLOT_SCHEMA_VERSION,
+    };
+    this.persistSlotMeta();
+    if (resolvedSlot === this.activeSlot) {
+      this.data = createDefaultData();
+      this.hasPersistedData = false;
+      this.storage.setItem(STORAGE_KEY, JSON.stringify(this.data));
+    }
+    return { ...this.slotMeta[resolvedSlot - 1] };
+  }
+
   persist() {
     if (shouldSkipPersist()) {
       return;
     }
-    this.storage.setItem(STORAGE_KEY, JSON.stringify(this.data));
-    this.hasPersistedData = true;
+    this.writeSlotData(this.activeSlot, this.data);
   }
 
   getLastSceneId() {
@@ -338,8 +559,16 @@ export class SaveState {
 
   clear() {
     this.data = createDefaultData();
+    this.slotMeta = createDefaultSlotList();
+    this.activeSlot = 1;
     this.storage.removeItem(STORAGE_KEY);
     this.storage.removeItem(LEGACY_STORAGE_KEY);
+    this.storage.removeItem(SLOT_METADATA_KEY);
+    this.storage.removeItem(SLOT_ACTIVE_KEY);
+    this.storage.removeItem(SLOT_MIGRATED_KEY);
+    for (let index = 1; index <= SLOT_COUNT; index += 1) {
+      this.storage.removeItem(getSlotStorageKey(index));
+    }
     this.hasPersistedData = false;
   }
 

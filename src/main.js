@@ -48,6 +48,7 @@ import {
   normalizeObjectiveId,
   resolveCurrentObjective,
 } from "./story/objectives.js";
+import { ELAINE_JOIN_INTRO_DONE_FLAG, tryTriggerElaineJoinIntro } from "./story/elaineJoinIntro.js";
 import { validateStoryState } from "./story/storyIntegrity.js";
 import { reconcileJoinState, SAVE_MIGRATION_JOIN_STATE_FLAG } from "./story/storyInvariants.js";
 import { CHAPTER3_FLAGS, tryTriggerRowanDebrief } from "./story/rowanDebriefChapter3.js";
@@ -112,6 +113,7 @@ import { SaveState } from "./save/saveState.js";
 import { SceneManager } from "./scenes/sceneManager.js";
 import { createDialogueBox } from "./ui/dialogueBox.js";
 import { createHud } from "./ui/hud.js";
+import { createPauseMenu } from "./ui/pauseMenu.js";
 import { createPartyChat } from "./ui/partyChat.js";
 import { nextFloat, nextInt, setSeed } from "./util/rng.js";
 import { VerdantAnomalySystem } from "./world/anomalies.js";
@@ -4611,7 +4613,7 @@ const touchInput = new TouchInput(canvas, {
   getPlayerPosition: () => new THREE.Vector2(player.position.x, player.position.z),
   onTapRipple: createTapRipple,
   onWorldTap: ({ worldPoint, pointerType }) => {
-    if (sceneManager.hasBlockingUiScene()) {
+    if (sceneManager.hasBlockingUiScene() || pauseMenu?.isOpen?.()) {
       return { consumed: true, clearTarget: true };
     }
     if (introTextBeat.isActive()) {
@@ -4828,6 +4830,30 @@ const touchInput = new TouchInput(canvas, {
 });
 const inputManager = new InputManager({ keyboardInput, touchInput });
 
+pauseMenu = createPauseMenu({
+  getSlots: () => saveState.getSlotSummaries?.() ?? [],
+  onResume: () => pauseMenu?.close?.(),
+  onSave: (slot) => {
+    saveState.setActiveSlot?.(slot);
+    saveState.saveToSlot?.(slot);
+    pauseMenu?.refresh?.();
+  },
+  onLoad: (slot) => {
+    const loaded = saveState.loadFromSlot?.(slot);
+    if (loaded) {
+      window.location.reload();
+    }
+  },
+  onDelete: (slot) => {
+    saveState.deleteSlot?.(slot);
+    pauseMenu?.refresh?.();
+  },
+  onRename: (slot, name) => {
+    saveState.renameSlot?.(slot, name);
+    pauseMenu?.refresh?.();
+  },
+});
+
 const mouseChargeState = {
   active: false,
   pointerId: null,
@@ -4844,6 +4870,7 @@ canvas.addEventListener("pointerdown", (event) => {
   }
   if (introTextBeat.isActive()) return;
   if (dialogueBox.isOpen()) return;
+  if (pauseMenu?.isOpen?.()) return;
   if (event.pointerType !== "mouse" || event.button !== 0) return;
   inputManager.clearTouchTarget();
   pendingMobileAttackEnemyId = null;
@@ -4880,6 +4907,7 @@ canvas.addEventListener("pointerup", (event) => {
   }
   if (introTextBeat.isActive()) return;
   if (dialogueBox.isOpen()) return;
+  if (pauseMenu?.isOpen?.()) return;
   if (!mouseChargeState.active) return;
   if (event.pointerType !== "mouse") return;
   if (event.pointerId !== mouseChargeState.pointerId) return;
@@ -4901,6 +4929,7 @@ canvas.addEventListener("pointercancel", (event) => {
   }
   if (introTextBeat.isActive()) return;
   if (dialogueBox.isOpen()) return;
+  if (pauseMenu?.isOpen?.()) return;
   if (!mouseChargeState.active) return;
   if (event.pointerType !== "mouse") return;
   if (event.pointerId !== mouseChargeState.pointerId) return;
@@ -4919,6 +4948,8 @@ let guardianCombatForced = false;
 let transientMessageSeconds = 0;
 let transientMessageText = "";
 let controlLockRemaining = 0;
+let elaineJoinIntroPending = null;
+let pauseMenu = null;
 let saveWriteAccumulator = 0;
 let lastCombatFrame = {
   combatActive: false,
@@ -5175,6 +5206,7 @@ function canProcessGameplayInput(event) {
   const typing = isTypingContext(target);
   const canvasFocused = document.activeElement === canvas || target === canvas;
   if (sceneManager.hasBlockingUiScene()) return false;
+  if (pauseMenu?.isOpen?.()) return false;
   if (dialogueBox.isOpen()) return false;
   if (shrineSystem.isOpen()) return false;
   if (vaelorisChoicePanel.isOpen()) return false;
@@ -6022,6 +6054,59 @@ function hasWillowJoined() {
   return getStoryFlag("willow_joined") || Boolean(partySystem.hasMember?.("willow"));
 }
 
+function hasElaineJoinIntroDone() {
+  return Boolean(getStoryFlag(ELAINE_JOIN_INTRO_DONE_FLAG));
+}
+
+function setElaineJoinIntroDone(done) {
+  setStoryFlag(ELAINE_JOIN_INTRO_DONE_FLAG, Boolean(done));
+}
+
+function queueElaineJoinIntroIfNeeded() {
+  if (elaineJoinIntroPending) return false;
+  if (sceneManager.isTransitioning()) return false;
+  if (sceneManager.hasBlockingUiScene()) return false;
+  if (pauseMenu?.isOpen?.()) return false;
+  if (dialogueBox.isOpen()) return false;
+  const outcome = tryTriggerElaineJoinIntro({
+    elaineJoined: hasElaineJoined(),
+    introDone: hasElaineJoinIntroDone(),
+    willowJoined: hasWillowJoined(),
+    objectiveId: getCurrentObjectiveId(),
+  });
+  if (!outcome?.triggered) return false;
+  const lockSeconds = Math.max(0, Number(outcome.lockSeconds) || 0.6);
+  controlLockRemaining = Math.max(controlLockRemaining, lockSeconds);
+  elaineJoinIntroPending = {
+    lockRemaining: lockSeconds,
+    lines: Array.isArray(outcome.lines) ? [...outcome.lines] : [],
+    setFlags: outcome.setFlags && typeof outcome.setFlags === "object" ? { ...outcome.setFlags } : {},
+  };
+  return true;
+}
+
+function updateElaineJoinIntroSequence(dtSeconds) {
+  if (!elaineJoinIntroPending) return;
+  const pending = elaineJoinIntroPending;
+  pending.lockRemaining = Math.max(0, pending.lockRemaining - Math.max(0, Number(dtSeconds) || 0));
+  if (pending.lockRemaining > 0) return;
+  if (sceneManager.isTransitioning()) return;
+  if (sceneManager.hasBlockingUiScene()) return;
+  if (dialogueBox.isOpen()) return;
+  if (pauseMenu?.isOpen?.()) return;
+  openNpcDialogue({
+    npcId: "elaine_join_intro",
+    npcName: "Party",
+    script: pending.lines,
+    onComplete: () => {
+      for (const [key, value] of Object.entries(pending.setFlags ?? {})) {
+        setStoryFlag(key, value);
+      }
+    },
+  });
+  elaineJoinIntroPending = null;
+}
+
 function hasPartyCompanionJoined() {
   return hasElaineJoined() || hasWillowJoined();
 }
@@ -6067,6 +6152,7 @@ function setElaineJoined(joined) {
   partySystem.setActiveCharacter(activePartyMember, player.position);
   if (joined) {
     resetElaineSupportState({ restoreFull: true });
+    queueElaineJoinIntroIfNeeded();
   } else {
     statusEffects.clearEffects(STATUS_ENTITY_IDS.ELAINE);
     setActivePartyMember("arthur");
@@ -6637,6 +6723,7 @@ function tryTriggerRowanCouncilEvent({ force = false } = {}) {
     if (sceneManager.isTransitioning()) return false;
     if (dialogueBox.isOpen()) return false;
     if (sceneManager.hasBlockingUiScene()) return false;
+  if (pauseMenu?.isOpen?.()) return false;
     if (shrineSystem.isOpen()) return false;
     if (vaelorisChoicePanel.isOpen() || harvesterChoicePanel.isOpen() || listeningSpikeChoicePanel.isOpen()) return false;
   }
@@ -6716,6 +6803,7 @@ function tryTriggerRowanDebriefChapter3Event({ force = false, nearRowan = false 
   if (!force) {
     if (sceneManager.isTransitioning()) return false;
     if (sceneManager.hasBlockingUiScene()) return false;
+  if (pauseMenu?.isOpen?.()) return false;
     if (dialogueBox.isOpen()) return false;
     if (shrineSystem.isOpen()) return false;
     if (vaelorisChoicePanel.isOpen() || harvesterChoicePanel.isOpen() || listeningSpikeChoicePanel.isOpen()) return false;
@@ -6785,6 +6873,7 @@ function tryTriggerChapter4RowanReportEvent({ force = false, nearRowan = false }
   if (!force) {
     if (sceneManager.isTransitioning()) return false;
     if (sceneManager.hasBlockingUiScene()) return false;
+  if (pauseMenu?.isOpen?.()) return false;
     if (dialogueBox.isOpen()) return false;
     if (shrineSystem.isOpen()) return false;
     if (vaelorisChoicePanel.isOpen() || harvesterChoicePanel.isOpen() || listeningSpikeChoicePanel.isOpen()) return false;
@@ -6862,6 +6951,7 @@ function tryTriggerChapter5AftershockEvent({ force = false, nearRowan = false } 
   if (!force) {
     if (sceneManager.isTransitioning()) return false;
     if (sceneManager.hasBlockingUiScene()) return false;
+  if (pauseMenu?.isOpen?.()) return false;
     if (dialogueBox.isOpen()) return false;
     if (shrineSystem.isOpen()) return false;
     if (vaelorisChoicePanel.isOpen() || harvesterChoicePanel.isOpen() || listeningSpikeChoicePanel.isOpen()) return false;
@@ -6940,6 +7030,7 @@ function tryTriggerChapter6ArrivalEvent({ force = false } = {}) {
   if (!force) {
     if (sceneManager.isTransitioning()) return false;
     if (sceneManager.hasBlockingUiScene()) return false;
+  if (pauseMenu?.isOpen?.()) return false;
     if (dialogueBox.isOpen()) return false;
     if (shrineSystem.isOpen()) return false;
     if (vaelorisChoicePanel.isOpen() || harvesterChoicePanel.isOpen() || listeningSpikeChoicePanel.isOpen()) return false;
@@ -6991,6 +7082,7 @@ function startChapter6RelaySetpiece({ force = false } = {}) {
   if (!force) {
     if (sceneManager.isTransitioning()) return false;
     if (sceneManager.hasBlockingUiScene()) return false;
+  if (pauseMenu?.isOpen?.()) return false;
     if (dialogueBox.isOpen()) return false;
     if (shrineSystem.isOpen()) return false;
     if (vaelorisChoicePanel.isOpen() || harvesterChoicePanel.isOpen() || listeningSpikeChoicePanel.isOpen()) return false;
@@ -7198,6 +7290,7 @@ function tryTriggerChapter6WaystoneLoreEvent({ force = false } = {}) {
   if (!force) {
     if (sceneManager.isTransitioning()) return false;
     if (sceneManager.hasBlockingUiScene()) return false;
+  if (pauseMenu?.isOpen?.()) return false;
     if (dialogueBox.isOpen()) return false;
     if (shrineSystem.isOpen()) return false;
     if (vaelorisChoicePanel.isOpen() || harvesterChoicePanel.isOpen() || listeningSpikeChoicePanel.isOpen()) return false;
@@ -7274,6 +7367,7 @@ function tryTriggerChapter8AftermathEvent({ force = false, nearRowan = false } =
   if (!force) {
     if (sceneManager.isTransitioning()) return false;
     if (sceneManager.hasBlockingUiScene()) return false;
+  if (pauseMenu?.isOpen?.()) return false;
     if (dialogueBox.isOpen()) return false;
     if (shrineSystem.isOpen()) return false;
     if (vaelorisChoicePanel.isOpen() || harvesterChoicePanel.isOpen() || listeningSpikeChoicePanel.isOpen()) return false;
@@ -7347,6 +7441,7 @@ function tryTriggerAct2FalloutEvent({ force = false } = {}) {
     if (sceneManager.isTransitioning()) return false;
     if (dialogueBox.isOpen()) return false;
     if (sceneManager.hasBlockingUiScene()) return false;
+  if (pauseMenu?.isOpen?.()) return false;
     if (shrineSystem.isOpen()) return false;
     if (vaelorisChoicePanel.isOpen() || harvesterChoicePanel.isOpen() || listeningSpikeChoicePanel.isOpen()) return false;
   }
@@ -7589,6 +7684,7 @@ function startChapter8RetaliationSetpiece({ force = false } = {}) {
   if (!force) {
     if (sceneManager.isTransitioning()) return false;
     if (sceneManager.hasBlockingUiScene()) return false;
+  if (pauseMenu?.isOpen?.()) return false;
     if (dialogueBox.isOpen()) return false;
     if (shrineSystem.isOpen()) return false;
     if (vaelorisChoicePanel.isOpen() || harvesterChoicePanel.isOpen() || listeningSpikeChoicePanel.isOpen()) return false;
@@ -8113,6 +8209,7 @@ function tryTriggerChapter9StartEvent({ force = false } = {}) {
   if (!force) {
     if (sceneManager.isTransitioning()) return false;
     if (sceneManager.hasBlockingUiScene()) return false;
+  if (pauseMenu?.isOpen?.()) return false;
     if (dialogueBox.isOpen()) return false;
     if (shrineSystem.isOpen()) return false;
     if (
@@ -8784,6 +8881,7 @@ function tryStartEndgameAct1Event({ force = false } = {}) {
   if (!force) {
     if (sceneManager.isTransitioning()) return false;
     if (sceneManager.hasBlockingUiScene()) return false;
+  if (pauseMenu?.isOpen?.()) return false;
     if (dialogueBox.isOpen()) return false;
     if (shrineSystem.isOpen()) return false;
     if (
@@ -10022,6 +10120,7 @@ function tryStartEndgameAct2Event({ force = false } = {}) {
   if (!force) {
     if (sceneManager.isTransitioning()) return false;
     if (sceneManager.hasBlockingUiScene()) return false;
+  if (pauseMenu?.isOpen?.()) return false;
     if (dialogueBox.isOpen()) return false;
     if (shrineSystem.isOpen()) return false;
     if (
@@ -12124,6 +12223,7 @@ function queueChapter2ArrivalBeat() {
   if (currentSceneInfo.sceneId !== "emberfall") return false;
   if (dialogueBox.isOpen()) return false;
   if (sceneManager.hasBlockingUiScene()) return false;
+  if (pauseMenu?.isOpen?.()) return false;
   if (!hasChapter2Started()) return false;
   if (hasChapter2ArrivedEmberfall()) return false;
 
@@ -12183,6 +12283,7 @@ function tryTriggerWillowMeetEvent({ force = false } = {}) {
     if (sceneManager.isTransitioning()) return false;
     if (dialogueBox.isOpen()) return false;
     if (sceneManager.hasBlockingUiScene()) return false;
+  if (pauseMenu?.isOpen?.()) return false;
     if (vaelorisChoicePanel.isOpen() || harvesterChoicePanel.isOpen() || listeningSpikeChoicePanel.isOpen()) return false;
   }
   const config = getWillowEncounterConfig();
@@ -12287,6 +12388,7 @@ function startListeningSpikeSetpiece({ force = false } = {}) {
   if (!force) {
     if (sceneManager.isTransitioning()) return false;
     if (sceneManager.hasBlockingUiScene()) return false;
+  if (pauseMenu?.isOpen?.()) return false;
     if (dialogueBox.isOpen()) return false;
     if (listeningSpikeChoicePanel.isOpen() || vaelorisChoicePanel.isOpen() || harvesterChoicePanel.isOpen()) return false;
   }
@@ -14155,6 +14257,7 @@ function canUseElaineSpells() {
   if (!hasElaineJoined()) return false;
   if (elaineDowned) return false;
   if (sceneManager.hasBlockingUiScene()) return false;
+  if (pauseMenu?.isOpen?.()) return false;
   if (dialogueBox.isOpen()) return false;
   if (shrineSystem.isOpen()) return false;
   if (vaelorisChoicePanel.isOpen()) return false;
@@ -14643,6 +14746,7 @@ function canUseWillowSpells() {
   if (!hasWillowJoined()) return false;
   if (!isPlayableScene(currentSceneInfo.sceneId)) return false;
   if (sceneManager.hasBlockingUiScene()) return false;
+  if (pauseMenu?.isOpen?.()) return false;
   if (dialogueBox.isOpen()) return false;
   if (shrineSystem.isOpen()) return false;
   if (vaelorisChoicePanel.isOpen()) return false;
@@ -16052,6 +16156,16 @@ function debugSetTargetHp(value = 1) {
 window.addEventListener("keydown", (event) => {
   if (isEditableElement(event.target)) return;
   const lowerKey = event.key.toLowerCase();
+
+  if (pauseMenu?.isOpen?.()) {
+    if (event.code === "Escape") {
+      event.preventDefault();
+      pauseMenu.close();
+      return;
+    }
+    return;
+  }
+
   const gameplayInputAllowed = canProcessGameplayInput(event);
 
   if (handleWillowSpellKey(event)) {
@@ -16174,6 +16288,12 @@ window.addEventListener("keydown", (event) => {
       shrineSystem.close();
       return;
     }
+    return;
+  }
+
+  if (event.code === "Escape") {
+    event.preventDefault();
+    pauseMenu?.toggle?.();
     return;
   }
 
@@ -17266,6 +17386,8 @@ function update(deltaSeconds) {
   updateAct2FalloutSequence(deltaSeconds);
   updateChapter2ArrivalSequence(deltaSeconds);
   updateWillowMeetSequence(deltaSeconds);
+  queueElaineJoinIntroIfNeeded();
+  updateElaineJoinIntroSequence(deltaSeconds);
   updateWillowAmbushSetpiece(deltaSeconds);
   updateListeningSpikeSetpiece(deltaSeconds);
   updateRidgePatrolSetpiece(deltaSeconds);
@@ -17301,6 +17423,7 @@ function update(deltaSeconds) {
   const frozenForEndingChoice = endingChoicePanel.isOpen();
   const frozenForCredits = creditsOverlay.isOpen();
   const frozenForSceneUi = sceneManager.hasBlockingUiScene();
+  const frozenForPauseMenu = pauseMenu?.isOpen?.() ?? false;
   const frozenForIntroText = introTextBeat.isActive();
   const frozenForChapter9Channel = Boolean(chapter9SetpieceState.channeling);
   const frozenForThirdSealChannel = Boolean(thirdSealQuestState.channeling);
@@ -17325,6 +17448,7 @@ function update(deltaSeconds) {
     frozenForEndingChoice ||
     frozenForCredits ||
     frozenForSceneUi ||
+    frozenForPauseMenu ||
     frozenForIntroText ||
     frozenForChapter9Channel ||
     frozenForThirdSealChannel ||
@@ -18463,6 +18587,7 @@ window.render_game_to_text = () => {
     threat_veins: getThreatVeins(),
     npcs: sceneManager.getNpcs(),
     dialogue_active: dialogueState.open,
+    pause_menu_open: pauseMenu?.isOpen?.() ?? false,
     dialogue_npc: dialogueState.npcName,
     dialogue_line: dialogueState.currentLine,
     dialogue_line_index: dialogueState.lineIndex,
@@ -18486,6 +18611,7 @@ window.render_game_to_text = () => {
     story_willow_met: hasWillowMet(),
     story_emberfall_unlocked: hasStoryEmberfallUnlocked(),
     story_elaine_joined: hasElaineJoined(),
+    story_elaine_join_intro_done: hasElaineJoinIntroDone(),
     story_willow_joined: hasWillowJoined(),
     story_vein_guardian_active: hasVeinGuardianActive(),
     story_vein_guardian_defeated: hasVeinGuardianDefeated(),
@@ -18939,6 +19065,26 @@ if (DEV_MODE) {
   window.debug_get_party_members = () => {
     return [...(partySystem.getState().members ?? [])];
   };
+  window.debug_save_to_slot = (slot = 1) => {
+    saveState.setActiveSlot?.(slot);
+    const meta = saveState.saveToSlot?.(slot);
+    pauseMenu?.refresh?.();
+    return meta;
+  };
+  window.debug_load_slot = (slot = 1) => {
+    const loaded = saveState.loadFromSlot?.(slot);
+    if (loaded) {
+      window.location.reload();
+    }
+    return { loaded, slot };
+  };
+  window.debug_clear_slot = (slot = 1) => {
+    const meta = saveState.deleteSlot?.(slot);
+    pauseMenu?.refresh?.();
+    return meta;
+  };
+  window.debug_list_slots = () => saveState.getSlotSummaries?.() ?? [];
+
   window.debug_randomize_seed = () => {
     randomizeSeed();
     return { seed: currentRngSeed };
