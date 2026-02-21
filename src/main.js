@@ -3694,6 +3694,7 @@ let chapter4RowanReportPending = null;
 let chapter5AftershockPending = null;
 let chapter6ArrivalPending = null;
 let chapter6WaystoneLorePending = null;
+let pauseMenu = null;
 let chapter8AftermathPending = null;
 let chapter9StartPending = null;
 let chapter9LoreVisionPending = null;
@@ -4949,7 +4950,6 @@ let transientMessageSeconds = 0;
 let transientMessageText = "";
 let controlLockRemaining = 0;
 let elaineJoinIntroPending = null;
-let pauseMenu = null;
 let saveWriteAccumulator = 0;
 let lastCombatFrame = {
   combatActive: false,
@@ -16154,9 +16154,6 @@ function debugSetTargetHp(value = 1) {
 }
 
 window.addEventListener("keydown", (event) => {
-  if (isEditableElement(event.target)) return;
-  const lowerKey = event.key.toLowerCase();
-
   if (pauseMenu?.isOpen?.()) {
     if (event.code === "Escape") {
       event.preventDefault();
@@ -16165,6 +16162,15 @@ window.addEventListener("keydown", (event) => {
     }
     return;
   }
+
+  if (event.code === "Escape") {
+    event.preventDefault();
+    pauseMenu?.toggle?.();
+    return;
+  }
+
+  if (isEditableElement(event.target)) return;
+  const lowerKey = event.key.toLowerCase();
 
   const gameplayInputAllowed = canProcessGameplayInput(event);
 
@@ -16288,12 +16294,6 @@ window.addEventListener("keydown", (event) => {
       shrineSystem.close();
       return;
     }
-    return;
-  }
-
-  if (event.code === "Escape") {
-    event.preventDefault();
-    pauseMenu?.toggle?.();
     return;
   }
 

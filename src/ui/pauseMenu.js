@@ -23,6 +23,7 @@ export function createPauseMenu({
   root.style.background = "rgba(7, 11, 9, 0.65)";
   root.style.zIndex = "45";
   root.style.display = "none";
+  root.style.pointerEvents = "none";
   root.style.alignItems = "flex-start";
   root.style.justifyContent = "center";
   root.style.paddingTop = "42px";
@@ -43,6 +44,7 @@ export function createPauseMenu({
   topRow.style.gap = "8px";
   topRow.style.flexWrap = "wrap";
   topRow.style.marginBottom = "10px";
+  topRow.style.justifyContent = "space-between";
 
   function createActionButton(label, onClick) {
     const button = document.createElement("button");
@@ -59,7 +61,12 @@ export function createPauseMenu({
     return button;
   }
 
-  topRow.append(
+  const primaryActions = document.createElement("div");
+  primaryActions.style.display = "flex";
+  primaryActions.style.gap = "8px";
+  primaryActions.style.flexWrap = "wrap";
+
+  primaryActions.append(
     createActionButton("Resume", () => onResume?.()),
     createActionButton("Save Game", () => slotsContainer.scrollIntoView({ block: "start", behavior: "smooth" })),
     createActionButton("Load Game", () => slotsContainer.scrollIntoView({ block: "start", behavior: "smooth" })),
@@ -67,8 +74,17 @@ export function createPauseMenu({
   );
 
   if (typeof onReturnToTitle === "function") {
-    topRow.append(createActionButton("Return to Title", () => onReturnToTitle()));
+    primaryActions.append(createActionButton("Return to Title", () => onReturnToTitle()));
   }
+
+  const closeButton = createActionButton("✕", () => close());
+  closeButton.dataset.testid = "pause-close-button";
+  closeButton.title = "Close pause menu";
+  closeButton.setAttribute("aria-label", "Close pause menu");
+  closeButton.style.minWidth = "32px";
+  closeButton.style.padding = "6px 9px";
+
+  topRow.append(primaryActions, closeButton);
 
   const heading = document.createElement("div");
   heading.textContent = "Save Slots";
@@ -178,6 +194,16 @@ export function createPauseMenu({
   panel.append(topRow, heading, slotsContainer);
   root.append(panel, confirmModal);
 
+  root.addEventListener("click", (event) => {
+    if (event.target === root) {
+      close();
+    }
+  });
+
+  panel.addEventListener("click", (event) => {
+    event.stopPropagation();
+  });
+
   const mobileButton = createActionButton("☰", () => {
     if (state.open) {
       close();
@@ -220,14 +246,20 @@ export function createPauseMenu({
   function open() {
     refresh();
     state.open = true;
+    root.style.pointerEvents = "auto";
     root.style.display = "flex";
   }
 
   function close() {
     state.open = false;
     root.style.display = "none";
+    root.style.pointerEvents = "none";
     confirmModal.style.display = "none";
     confirmModalAction = null;
+    const gameCanvas = document.querySelector("canvas");
+    if (gameCanvas && typeof gameCanvas.focus === "function") {
+      gameCanvas.focus();
+    }
   }
 
   function askConfirm(message, action) {
