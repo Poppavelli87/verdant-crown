@@ -3696,6 +3696,7 @@ let chapter4RowanReportPending = null;
 let chapter5AftershockPending = null;
 let chapter6ArrivalPending = null;
 let chapter6WaystoneLorePending = null;
+let pauseMenu = null;
 let chapter8AftermathPending = null;
 let chapter9StartPending = null;
 let chapter9LoreVisionPending = null;
@@ -4951,7 +4952,6 @@ let transientMessageSeconds = 0;
 let transientMessageText = "";
 let controlLockRemaining = 0;
 let elaineJoinIntroPending = null;
-let pauseMenu = null;
 let saveWriteAccumulator = 0;
 let lastCombatFrame = {
   combatActive: false,
