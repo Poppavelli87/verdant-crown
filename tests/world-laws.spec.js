@@ -6687,6 +6687,46 @@ test("Pause menu opens, freezes input, and resumes", async ({ page }) => {
   expect(Math.abs(resumed.player.x - paused.player.x)).toBeGreaterThan(0.03);
 });
 
+test("Pause menu Escape closes from editable field and resumes gameplay", async ({ page }) => {
+  await bootstrap(page);
+  await enterGameplayFlow(page);
+
+  await page.keyboard.press("Escape");
+  const pauseMenu = page.locator('[data-testid="pause-menu"]');
+  await expect(pauseMenu).toBeVisible();
+
+  const slotName = page.locator('[data-testid="slot-name-1"]');
+  await slotName.click();
+  await slotName.pressSequentially("Focus Test");
+
+  const paused = await getState(page);
+  await page.keyboard.press("Escape");
+  await expect(pauseMenu).toBeHidden();
+
+  await page.keyboard.down("KeyD");
+  await advance(page, 500);
+  await page.keyboard.up("KeyD");
+  const resumed = await getState(page);
+  expect(Math.abs(resumed.player.x - paused.player.x)).toBeGreaterThan(0.03);
+});
+
+test("Pause menu closes from backdrop and close button", async ({ page }) => {
+  await bootstrap(page);
+  await enterGameplayFlow(page);
+
+  const pauseMenu = page.locator('[data-testid="pause-menu"]');
+
+  await page.keyboard.press("Escape");
+  await expect(pauseMenu).toBeVisible();
+  await pauseMenu.click({ position: { x: 8, y: 8 } });
+  await expect(pauseMenu).toBeHidden();
+
+  await page.keyboard.press("Escape");
+  await expect(pauseMenu).toBeVisible();
+  await page.click('[data-testid="pause-close-button"]');
+  await expect(pauseMenu).toBeHidden();
+});
+
 test("Save slots support rename/save/load/overwrite/delete", async ({ page }) => {
   await bootstrap(page);
   await enterGameplayFlow(page);
