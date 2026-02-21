@@ -16154,9 +16154,6 @@ function debugSetTargetHp(value = 1) {
 }
 
 window.addEventListener("keydown", (event) => {
-  if (isEditableElement(event.target)) return;
-  const lowerKey = event.key.toLowerCase();
-
   if (pauseMenu?.isOpen?.()) {
     if (event.code === "Escape") {
       event.preventDefault();
@@ -16165,6 +16162,15 @@ window.addEventListener("keydown", (event) => {
     }
     return;
   }
+
+  if (event.code === "Escape") {
+    event.preventDefault();
+    pauseMenu?.toggle?.();
+    return;
+  }
+
+  if (isEditableElement(event.target)) return;
+  const lowerKey = event.key.toLowerCase();
 
   const gameplayInputAllowed = canProcessGameplayInput(event);
 
@@ -16288,12 +16294,6 @@ window.addEventListener("keydown", (event) => {
       shrineSystem.close();
       return;
     }
-    return;
-  }
-
-  if (event.code === "Escape") {
-    event.preventDefault();
-    pauseMenu?.toggle?.();
     return;
   }
 
