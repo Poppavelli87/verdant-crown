@@ -433,6 +433,8 @@ export class Enemy {
 
     this.attackCooldownRemaining = 0;
     this.staggerRemaining = 0;
+    this.postAttackRecoveryRemaining = 0;
+    this.staggerImmunityRemaining = 0;
     this.stateTime = 0;
     this.hitFlashRemaining = 0;
     this.attackStrikeFlashRemaining = 0;
@@ -636,6 +638,8 @@ export class Enemy {
     this.stateTime += dtSeconds;
     this.attackCooldownRemaining = Math.max(0, this.attackCooldownRemaining - dtSeconds);
     this.staggerRemaining = Math.max(0, this.staggerRemaining - dtSeconds);
+    this.postAttackRecoveryRemaining = Math.max(0, this.postAttackRecoveryRemaining - dtSeconds);
+    this.staggerImmunityRemaining = Math.max(0, this.staggerImmunityRemaining - dtSeconds);
     this.hitFlashRemaining = Math.max(0, this.hitFlashRemaining - dtSeconds);
     this.attackStrikeFlashRemaining = Math.max(0, this.attackStrikeFlashRemaining - dtSeconds);
     this.specialCooldownRemaining = Math.max(0, this.specialCooldownRemaining - dtSeconds);
@@ -845,6 +849,8 @@ export class Enemy {
     this.setState(ENEMY_STATES.DEAD);
     this.attackCooldownRemaining = 0;
     this.staggerRemaining = 0;
+    this.postAttackRecoveryRemaining = 0;
+    this.staggerImmunityRemaining = 0;
     this.hitFlashRemaining = 0;
     this.attackStrikeFlashRemaining = 0;
     this.specialCooldownRemaining = 0;

@@ -94,6 +94,12 @@ Key browser hooks (`window.*`) include:
 - `tests`: Playwright E2E/regression/stress specs
 - `scripts/qa`: deterministic simulation + static scan tooling
 
+## Gameplay tuning knobs
+- `src/config/gameplayTuning.js`
+  - `COMBAT_TUNING`: hit-stop window, enemy aggression ramp/decay, cooldown scaling, recovery, stagger-immunity safeguards.
+  - `COLLISION_TUNING`: player/companion radii, NPC padding, correction iterations, and personal-space multiplier.
+  - `COMPANION_AI_TUNING`: roam radius, soft/hard leash distances, wander cadence, pause timing, and investigation chance.
+
 ## Determinism Notes
 - Tests and QA flows rely on deterministic hooks (`debug_*`) and objective-driven assertions.
 - Simulation harness uses seeded scenario selection (`seedBase + runIndex`) and deterministic story setup.

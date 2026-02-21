@@ -8,6 +8,8 @@ import {
   computeSeparationVector,
   hasThreatWithinRadius,
 } from "./roleAi.js";
+import { COMPANION_AI_TUNING, COLLISION_TUNING } from "../config/gameplayTuning.js";
+import { computeCompanionRoamGoal, createCompanionRoamState } from "./companionRoam.js";
 
 const FOLLOW_OFFSET = new THREE.Vector2(-0.75, 0.55);
 const WILLOW_FOLLOW_OFFSET = new THREE.Vector2(0.82, 0.5);
@@ -200,6 +202,10 @@ export class PartySystem {
       bossActive: false,
       currentMode: "balanced",
       members: [],
+    };
+    this._companionRoam = {
+      elaine: createCompanionRoamState(),
+      willow: createCompanionRoamState(),
     };
 
     this._projectileTexture = createProjectileTexture();
@@ -1065,23 +1071,26 @@ export class PartySystem {
 
     const threat = combatMode ? chooseThreat(partyMembers, enemies, "elaine", leaderRecord?.id ?? "arthur") : null;
     const followAnchor = this._getFollowAnchor("elaine", leaderRecord ?? this.elaineFollower.position);
-    const desired = computeDesiredPosition(
-      {
-        id: "elaine",
-        x: this.elaineFollower.position.x,
-        z: this.elaineFollower.position.y,
-      },
-      "elaine",
-      tacticsMode,
-      threat,
-      partyMembers,
-      enemies,
-      {
-        leader: leaderRecord,
-        followAnchor,
-        castingRooted: castRooted,
-      }
-    );
+    const elaineCurrent = {
+      id: "elaine",
+      x: this.elaineFollower.position.x,
+      z: this.elaineFollower.position.y,
+    };
+    const desired =
+      !combatMode && !castRooted
+        ? computeCompanionRoamGoal({
+            companionId: "elaine",
+            currentPosition: elaineCurrent,
+            leaderPosition: { x: followAnchor.x, z: followAnchor.z },
+            elapsedSeconds,
+            roamState: this._companionRoam.elaine,
+            tuning: COMPANION_AI_TUNING,
+          })
+        : computeDesiredPosition(elaineCurrent, "elaine", tacticsMode, threat, partyMembers, enemies, {
+            leader: leaderRecord,
+            followAnchor,
+            castingRooted: castRooted,
+          });
     const separated = castRooted
       ? { x: this.elaineFollower.position.x, z: this.elaineFollower.position.y }
       : this._applySeparation(
@@ -1105,7 +1114,7 @@ export class PartySystem {
     this._recordAiState({
       id: "elaine",
       position: { x: this.elaineFollower.position.x, z: this.elaineFollower.position.y },
-      aiState: castRooted ? "support_cast" : combatMode ? desired.stateHint || "engage" : "follow",
+      aiState: castRooted ? "support_cast" : combatMode ? desired.stateHint || "assist_combat" : desired.aiState || "wander",
       threatId: threat?.id ?? "",
       distToThreat:
         threat == null
@@ -1181,22 +1190,25 @@ export class PartySystem {
 
     const threat = combatMode ? chooseThreat(partyMembers, enemies, "willow", leaderRecord?.id ?? "arthur") : null;
     const followAnchor = this._getFollowAnchor("willow", leaderRecord ?? this.willowFollower.position);
-    const desired = computeDesiredPosition(
-      {
-        id: "willow",
-        x: this.willowFollower.position.x,
-        z: this.willowFollower.position.y,
-      },
-      "willow",
-      tacticsMode,
-      threat,
-      partyMembers,
-      enemies,
-      {
-        leader: leaderRecord,
-        followAnchor,
-      }
-    );
+    const willowCurrent = {
+      id: "willow",
+      x: this.willowFollower.position.x,
+      z: this.willowFollower.position.y,
+    };
+    const desired =
+      !combatMode
+        ? computeCompanionRoamGoal({
+            companionId: "willow",
+            currentPosition: willowCurrent,
+            leaderPosition: { x: followAnchor.x, z: followAnchor.z },
+            elapsedSeconds,
+            roamState: this._companionRoam.willow,
+            tuning: COMPANION_AI_TUNING,
+          })
+        : computeDesiredPosition(willowCurrent, "willow", tacticsMode, threat, partyMembers, enemies, {
+            leader: leaderRecord,
+            followAnchor,
+          });
     const separated = this._applySeparation(
       {
         id: "willow",
@@ -1216,7 +1228,7 @@ export class PartySystem {
     this._recordAiState({
       id: "willow",
       position: { x: this.willowFollower.position.x, z: this.willowFollower.position.y },
-      aiState: combatMode ? desired.stateHint || "engage" : "follow",
+      aiState: combatMode ? desired.stateHint || "assist_combat" : desired.aiState || "wander",
       threatId: threat?.id ?? "",
       distToThreat:
         threat == null
@@ -1449,6 +1461,40 @@ export class PartySystem {
       currentMode: this._aiFrame.currentMode ?? "balanced",
       members: (this._aiFrame.members ?? []).map((member) => ({ ...member })),
     };
+  }
+
+  getCollisionAgents() {
+    const agents = [];
+    if (this.elaineFollower) {
+      agents.push({
+        id: "party:elaine",
+        x: this.elaineFollower.position.x,
+        z: this.elaineFollower.position.y,
+        radius: COLLISION_TUNING.companionRadius,
+      });
+    }
+    if (this.willowFollower) {
+      agents.push({
+        id: "party:willow",
+        x: this.willowFollower.position.x,
+        z: this.willowFollower.position.y,
+        radius: COLLISION_TUNING.companionRadius,
+      });
+    }
+    return agents;
+  }
+
+  applyCollisionCorrections(corrections = new Map()) {
+    const elaineCorrection = corrections.get("party:elaine");
+    if (this.elaineFollower && elaineCorrection) {
+      this.elaineFollower.position.x = elaineCorrection.x;
+      this.elaineFollower.position.y = elaineCorrection.z;
+    }
+    const willowCorrection = corrections.get("party:willow");
+    if (this.willowFollower && willowCorrection) {
+      this.willowFollower.position.x = willowCorrection.x;
+      this.willowFollower.position.y = willowCorrection.z;
+    }
   }
 
   _snapshotFollowerRenderState(entity) {

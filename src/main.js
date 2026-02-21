@@ -14,6 +14,8 @@ import { PacingDirector } from "./director/pacingDirector.js";
 import { AudioBus } from "./audio/audioBus.js";
 import { CHARACTER_SCALE, TILE_REPEAT_SCALE } from "./config/scale.js";
 import { GAME_VERSION } from "./config/version.js";
+import { COLLISION_TUNING } from "./config/gameplayTuning.js";
+import { resolveCircleSeparation } from "./systems/separation.js";
 import { REGIONS } from "./data/regions.js";
 import { InputManager } from "./input/inputManager.js";
 import { KeyboardInput } from "./input/keyboardInput.js";
@@ -16972,6 +16974,53 @@ function applyWorldVisuals(deltaSeconds) {
   });
 }
 
+
+function applyDynamicCollisionSeparation() {
+  const agents = [];
+  agents.push({
+    id: "player",
+    x: player.position.x,
+    z: player.position.z,
+    radius: COLLISION_TUNING.playerRadius,
+    weight: COLLISION_TUNING.playerWeight,
+  });
+
+  for (const npc of sceneManager.getCollisionAgents({ radiusPadding: COLLISION_TUNING.npcRadiusPadding })) {
+    agents.push({
+      ...npc,
+      weight: COLLISION_TUNING.staticWeight,
+    });
+  }
+
+  for (const companion of partySystem.getCollisionAgents()) {
+    agents.push({
+      ...companion,
+      weight: COLLISION_TUNING.companionWeight,
+    });
+  }
+
+  for (const enemy of combatSystem.getCollisionAgents()) {
+    agents.push({
+      ...enemy,
+      weight: COLLISION_TUNING.enemyWeight,
+    });
+  }
+
+  const solved = resolveCircleSeparation(agents, {
+    iterations: COLLISION_TUNING.iterations,
+    personalSpaceMultiplier: COLLISION_TUNING.personalSpaceMultiplier,
+  });
+  const solvedMap = new Map(solved.map((entry) => [entry.id, entry]));
+
+  const playerCorrection = solvedMap.get("player");
+  if (playerCorrection) {
+    player.position.x = playerCorrection.x;
+    player.position.z = playerCorrection.z;
+  }
+  partySystem.applyCollisionCorrections(solvedMap);
+  combatSystem.applyCollisionCorrections(solvedMap);
+}
+
 function update(deltaSeconds) {
   introTextBeat.update(deltaSeconds);
   dialogueBox.update(deltaSeconds);
@@ -18235,6 +18284,7 @@ function update(deltaSeconds) {
     aiStats.willowBoltCount += willowShotDelta;
   }
   lastWillowShotCountSeen = willowShotCount;
+  applyDynamicCollisionSeparation();
   lastPartyFrame = {
     damageDealt: Number(((partyResult?.damageDealt ?? 0) + willowManualDamage).toFixed(2)),
     ...partySnapshot,
@@ -18481,6 +18531,8 @@ window.render_game_to_text = () => {
     combat_from_enemies: combatFromEnemies,
     combat_guardian_forced: guardianCombatForced,
     combat_linger: Number(lastCombatFrame.combatLingerRemaining.toFixed(3)),
+    combat_enemy_aggression: Number((lastCombatFrame.enemyAggression ?? 0).toFixed(3)),
+    combat_hit_stop_remaining: Number((lastCombatFrame.hitStopRemaining ?? 0).toFixed(3)),
     transition_active: sceneManager.isTransitioning(),
     player_health: Number(playerState.hp.toFixed(2)),
     player_max_health: playerState.maxHP,
@@ -18933,6 +18985,8 @@ window.get_npcs = () =>
     ...npc,
     screen: worldToScreen(npc.x, npc.z),
   }));
+window.debug_resolve_circle_separation = (agents = [], options = {}) =>
+  resolveCircleSeparation(Array.isArray(agents) ? agents : [], options);
   window.debug_force_mobile_ui = (value) => setDebugMobileUiOverride(value);
   window.debug_prologue_next = () => sceneManager.debugPrologueNext();
 if (DEV_MODE) {

@@ -3,6 +3,7 @@ import { DamageSystem, ENEMY_STAGGER_SECONDS } from "./damageSystem.js";
 import { ENEMY_STATES, Enemy } from "./enemy.js";
 import { onEnemyKilled as buildEnemyKilledEvent } from "./onEnemyKilled.js";
 import { STATUS_EFFECT_IDS } from "./statusEffects.js";
+import { COMBAT_TUNING, COLLISION_TUNING } from "../config/gameplayTuning.js";
 
 const COMBAT_LINGER_SECONDS = 2.5;
 const AGGRO_DISENGAGE_MULTIPLIER = 1.45;
@@ -64,6 +65,8 @@ export class CombatSystem {
 
     this.lootCollected = 0;
     this.totalEnemiesDefeated = 0;
+    this.hitStopRemaining = 0;
+    this.enemyAggression = 0;
   }
 
   setDamageResolver(resolver) {
@@ -564,9 +567,10 @@ export class CombatSystem {
         if (enemy.role === "construct") {
           const preferredDistance = enemy.constructPreferredDistance;
           const minDistance = enemy.constructMinDistance;
+          const moveScale = 1 + this.enemyAggression * (COMBAT_TUNING.movementSpeedScaleAtMaxAggression - 1);
           if (distanceToTarget > preferredDistance * 1.14 && hasTargetDirection) {
-            enemy.position.x += toTarget.x * enemy.moveSpeed * dtSeconds;
-            enemy.position.y += toTarget.y * enemy.moveSpeed * dtSeconds;
+            enemy.position.x += toTarget.x * enemy.moveSpeed * moveScale * dtSeconds;
+            enemy.position.y += toTarget.y * enemy.moveSpeed * moveScale * dtSeconds;
           } else if (distanceToTarget < minDistance && hasTargetDirection) {
             enemy.position.x -= toTarget.x * enemy.moveSpeed * 0.94 * dtSeconds;
             enemy.position.y -= toTarget.y * enemy.moveSpeed * 0.94 * dtSeconds;
@@ -834,6 +838,9 @@ export class CombatSystem {
         }
 
         if (enemy.staggerRemaining <= 0 && enemy.attackCooldownRemaining <= 0) {
+          if (enemy.postAttackRecoveryRemaining > 0) {
+            break;
+          }
           if (enemy.attackWindupSeconds > 0 && enemy.stateTime < enemy.attackWindupSeconds) {
             break;
           }
@@ -848,7 +855,10 @@ export class CombatSystem {
             const outcome = onPartyDamaged?.(contactDamage, enemy, threatTarget.id) ?? { damage: contactDamage };
             damageTaken += outcome.damage ?? 0;
           }
-          enemy.attackCooldownRemaining = enemy.attackCooldown;
+          const attackCooldownScale =
+            1 - this.enemyAggression * (1 - COMBAT_TUNING.attackCooldownScaleAtMaxAggression);
+          enemy.attackCooldownRemaining = enemy.attackCooldown * Math.max(0.25, attackCooldownScale);
+          enemy.postAttackRecoveryRemaining = COMBAT_TUNING.postAttackRecoverySeconds;
           enemy.stateTime = 0;
           if (enemy.role === "harrier" || enemy.role === "bulwark") {
             enemy.setState(ENEMY_STATES.AGGRO);
@@ -964,7 +974,10 @@ export class CombatSystem {
         target.setState(ENEMY_STATES.AGGRO);
       }
       if (shouldStagger) {
-        target.staggerRemaining = Math.max(target.staggerRemaining, staggerDuration);
+        if (target.staggerImmunityRemaining <= 0) {
+          target.staggerRemaining = Math.max(target.staggerRemaining, staggerDuration);
+          target.staggerImmunityRemaining = COMBAT_TUNING.staggerImmunitySeconds;
+        }
       }
       const killEvent =
         target.health <= 0
@@ -986,6 +999,10 @@ export class CombatSystem {
         killed,
         blocked: frontBlocked,
       });
+      this.hitStopRemaining = Math.max(
+        this.hitStopRemaining,
+        attackEvent.type === "charge" ? COMBAT_TUNING.hitStopSecondsCharge : COMBAT_TUNING.hitStopSecondsLight
+      );
     }
 
     return dealt;
@@ -1084,6 +1101,7 @@ export class CombatSystem {
     }
   ) {
     this.elapsedSeconds += dtSeconds;
+    this.hitStopRemaining = Math.max(0, this.hitStopRemaining - dtSeconds);
     const normalizedThreatTargets = this._normalizeThreatTargets(playerPosition, threatTargets);
     const damageTargetCallback =
       typeof onPartyDamaged === "function"
@@ -1122,8 +1140,13 @@ export class CombatSystem {
 
     if (anyAggro) {
       this.combatLingerRemaining = COMBAT_LINGER_SECONDS;
+      this.enemyAggression = Math.min(
+        COMBAT_TUNING.maxAggressionRamp,
+        this.enemyAggression + dtSeconds * COMBAT_TUNING.aggressionRampPerSecond
+      );
     } else {
       this.combatLingerRemaining = Math.max(0, this.combatLingerRemaining - dtSeconds);
+      this.enemyAggression = Math.max(0, this.enemyAggression - dtSeconds * COMBAT_TUNING.aggressionDecayPerSecond);
     }
 
     this.combatActive = anyAggro || this.combatLingerRemaining > 0;
@@ -1142,7 +1165,30 @@ export class CombatSystem {
       enemiesDefeated: this.totalEnemiesDefeated,
       activeOrbs: this.lootOrbs.length,
       activeProjectiles: this.enemyProjectiles.length,
+      enemyAggression: Number(this.enemyAggression.toFixed(3)),
+      hitStopRemaining: Number(this.hitStopRemaining.toFixed(3)),
     };
+  }
+
+  getCollisionAgents() {
+    return this.enemies
+      .filter((enemy) => enemy.isAlive())
+      .map((enemy) => ({
+        id: `enemy:${enemy.id}`,
+        x: enemy.position.x,
+        z: enemy.position.y,
+        radius: Math.max(0.18, enemy.collisionRadius),
+      }));
+  }
+
+  applyCollisionCorrections(corrections = new Map()) {
+    for (const enemy of this.enemies) {
+      if (!enemy.isAlive()) continue;
+      const correction = corrections.get(`enemy:${enemy.id}`);
+      if (!correction) continue;
+      enemy.position.x = correction.x;
+      enemy.position.y = correction.z;
+    }
   }
 
   pickEnemyAtWorldPoint(worldPoint, radius = 0.8) {
