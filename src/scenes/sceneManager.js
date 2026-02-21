@@ -455,6 +455,18 @@ export class SceneManager {
     }));
   }
 
+
+  getCollisionAgents({ radiusPadding = 0 } = {}) {
+    if (!this.currentScene?.getNpcs) return [];
+    const padding = Math.max(0, Number(radiusPadding) || 0);
+    return this.currentScene.getNpcs().map((npc) => ({
+      id: `npc:${npc.id}`,
+      x: npc.position.x,
+      z: npc.position.y,
+      radius: Math.max(0.2, npc.interactRadius * 0.6 + padding),
+    }));
+  }
+
   getNpcs() {
     if (!this.currentScene?.getNpcs) return [];
     return this.currentScene.getNpcs().map((npc) => npc.toSnapshot());
