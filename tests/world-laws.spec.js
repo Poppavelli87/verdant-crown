@@ -6614,3 +6614,133 @@ test.describe("endgame act iii last spire finale", () => {
     expect(consoleErrors).toEqual([]);
   });
 });
+
+test("Elaine join intro dialogue triggers once", async ({ page }) => {
+  await bootstrap(page);
+  await enterGameplayFlow(page);
+
+  await page.evaluate(() => {
+    window.debug_set_story_flag?.("elaine_join_intro_done", false);
+    window.debug_set_story_flag?.("elaine_joined", true);
+  });
+  await advance(page, 900);
+
+  await page.waitForFunction(() => {
+    const state = JSON.parse(window.render_game_to_text?.() || "{}");
+    return state.dialogue_active === true;
+  });
+  await advance(page, 420);
+  await expect(page).toHaveScreenshot("elaine-join-intro-dialogue.png", {
+    animations: "disabled",
+    fullPage: true,
+    maxDiffPixels: 1000,
+  });
+
+  for (let i = 0; i < 20; i += 1) {
+    await page.keyboard.press("Space");
+    await advance(page, 120);
+    const state = await getState(page);
+    if (!state.dialogue_active) {
+      break;
+    }
+  }
+
+  let state = await getState(page);
+  expect(state.story_elaine_join_intro_done).toBe(true);
+
+  await page.reload();
+  await page.waitForFunction(() => typeof window.render_game_to_text === "function");
+  await page.evaluate(() => {
+    window.setScreenshotMode?.(true);
+    window.advanceTime?.(500);
+  });
+  state = await getState(page);
+  expect(state.dialogue_active).toBe(false);
+});
+
+test("Pause menu opens, freezes input, and resumes", async ({ page }) => {
+  await bootstrap(page);
+  await enterGameplayFlow(page);
+
+  const before = await getState(page);
+  await page.keyboard.press("Escape");
+  await expect(page.locator('[data-testid="pause-menu"]')).toBeVisible();
+  await page.keyboard.down("KeyD");
+  await advance(page, 600);
+  await page.keyboard.up("KeyD");
+  const paused = await getState(page);
+  expect(Math.abs(paused.player.x - before.player.x)).toBeLessThan(0.01);
+  expect(Math.abs(paused.player.z - before.player.z)).toBeLessThan(0.01);
+
+  await expect(page).toHaveScreenshot("pause-menu.png", {
+    animations: "disabled",
+    fullPage: true,
+    maxDiffPixels: 1000,
+  });
+
+  await page.keyboard.press("Escape");
+  await expect(page.locator('[data-testid="pause-menu"]')).toBeHidden();
+  await page.keyboard.down("KeyD");
+  await advance(page, 500);
+  await page.keyboard.up("KeyD");
+  const resumed = await getState(page);
+  expect(Math.abs(resumed.player.x - paused.player.x)).toBeGreaterThan(0.03);
+});
+
+test("Save slots support rename/save/load/overwrite/delete", async ({ page }) => {
+  await bootstrap(page);
+  await enterGameplayFlow(page);
+
+  await page.evaluate(() => {
+    window.debug_set_objective?.("return_to_rowan");
+  });
+  await page.click('[data-testid="menu-button"]');
+  await expect(page.locator('[data-testid="pause-menu"]')).toBeVisible();
+
+  const slotName = page.locator('[data-testid="slot-name-1"]');
+  await slotName.fill("My Test Save");
+  await slotName.dispatchEvent("change");
+  await page.click('[data-testid="slot-save-1"]');
+  await advance(page, 220);
+
+  await expect(page).toHaveScreenshot("save-slots.png", {
+    animations: "disabled",
+    fullPage: true,
+    maxDiffPixels: 1200,
+  });
+
+  await page.keyboard.press("Escape");
+  await page.evaluate(() => {
+    window.debug_set_objective?.("none");
+    window.debug_warp_to_scene?.("hollowScar");
+  });
+  await advance(page, 700);
+
+  await page.click('[data-testid="menu-button"]');
+  await page.click('[data-testid="slot-load-1"]');
+  await page.waitForFunction(() => typeof window.render_game_to_text === "function");
+  await page.evaluate(() => {
+    window.setScreenshotMode?.(true);
+    window.advanceTime?.(400);
+  });
+  let state = await getState(page);
+  expect(state.scene_id).toBe("thornmere");
+  expect(state.objective).toBe("return_to_rowan");
+
+  await page.click('[data-testid="menu-button"]');
+  await page.click('[data-testid="slot-save-1"]');
+  await expect(page.locator('[data-testid="overwrite-confirm"]')).toBeVisible();
+  await expect(page).toHaveScreenshot("overwrite-modal.png", {
+    animations: "disabled",
+    fullPage: true,
+    maxDiffPixels: 1000,
+  });
+  await page.click('#overwrite-confirm-yes');
+
+  await page.click('[data-testid="slot-delete-1"]');
+  await page.click('#overwrite-confirm-yes');
+  await expect(page.locator('[data-testid="slot-load-1"]')).toBeDisabled();
+  await expect(page.locator('[data-testid="slot-name-1"]')).toHaveValue("My Test Save");
+  state = await getState(page);
+  expect(state.pause_menu_open).toBe(true);
+});
